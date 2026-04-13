@@ -1,0 +1,22 @@
+{
+  "name": "multiplayer-poker-web",
+  "version": "1.0.0",
+  "description": "Texas Hold'em poker game with React frontend and Node.js backend",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/client"
+  ],
+  "scripts": {
+    "install-all": "npm install",
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "server": "npm run dev --workspace=packages/server",
+    "client": "npm run dev --workspace=packages/client",
+    "type-check": "npm run type-check --workspaces"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
