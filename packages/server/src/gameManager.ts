@@ -20,7 +20,7 @@ export class GameManager {
   private gameState: GameState;
   private holeCards: Map<number, [Card, Card]> = new Map();
   private deck: Card[] = [];
-  private rng = new Math.random();
+  private rng = Math.random;
 
   constructor() {
     this.gameState = {

@@ -2,14 +2,14 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
-import { GameManager } from './gameManager';
+import { GameManager } from './gameManager.js';
 import { GameState, PokerAction } from '@poker/shared';
 
 const app = express();
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     methods: ['GET', 'POST'],
   },
 });

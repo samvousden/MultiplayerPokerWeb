@@ -34,7 +34,7 @@ export const GameBoard: React.FC = () => {
             <h4>{player.name}</h4>
             <p>Stack: ${player.stack}</p>
             {player.isReady && <span className="badge ready">Ready</span>}
-            {player.hasF olded && <span className="badge folded">Folded</span>}
+            {player.hasFolded && <span className="badge folded">Folded</span>}
             {player.isAllIn && <span className="badge all-in">All In</span>}
           </div>
         ))}
