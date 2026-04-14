@@ -309,7 +309,7 @@ io.on('connection', (socket) => {
       
       // Send updated sleeve card info to the player who used the item
       const { sleeveCard, sleeveCard2 } = gameManager.getPlayerSleeveCards(playerId);
-      socket.emit('sleeve-card-updated', { sleeveCard, sleeveCard2 });
+      socket.emit('sleeve-card-updated', { sleeveCard, sleeveCard2, sleeveUsedThisHand: gameManager.hasUsedSleeveThisHand(playerId) });
 
       // If this was a sleeve card swap, re-send updated hole cards so UI reflects immediately
       if (useType === 21 || useType === 22 || useType === 23 || useType === 24) { // sleeve swap types (A/B for slot 1 and slot 2)
@@ -334,7 +334,28 @@ io.on('connection', (socket) => {
       hiddenCameraCharges: ps?.hiddenCameraCharges ?? 0,
       hasGun: ps?.hasGun ?? false,
       bullets: ps?.bullets ?? 0,
+      sleeveUsedThisHand: gameManager.hasUsedSleeveThisHand(playerId),
+      bonds: ps?.bonds ?? [],
+      stockOptions: ps?.stockOptions ?? [],
+      totalLuck: ps ? (ps.permanentLuck + ps.luckBuffs.reduce((s, b) => s + b.amount, 0)) : 0,
+      luckBuffs: ps?.luckBuffs ?? [],
     });
+  });
+
+  socket.on('cash-out-bond', (playerId: number, bondIndex: number, callback) => {
+    const result = gameManager.cashOutBond(playerId, bondIndex);
+    if (result.success) {
+      io.emit('game-state-updated', gameManager.getGameState());
+    }
+    callback(result);
+  });
+
+  socket.on('cash-out-stock-option', (playerId: number, optionIndex: number, callback) => {
+    const result = gameManager.cashOutStockOption(playerId, optionIndex);
+    if (result.success) {
+      io.emit('game-state-updated', gameManager.getGameState());
+    }
+    callback(result);
   });
 
   socket.on('get-shop-slots', (playerId: number, callback) => {

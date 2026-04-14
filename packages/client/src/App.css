@@ -976,6 +976,89 @@
   font-weight: bold;
 }
 
+/* Gold sticker for luck-improved cards */
+.improved-card {
+  position: relative;
+  border-color: #ffd700 !important;
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+}
+
+.gold-sticker {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 0.7em;
+  color: #ffd700;
+  text-shadow: 0 0 4px rgba(255, 215, 0, 0.8);
+}
+
+/* Investments & Luck section */
+.investments-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.luck-display {
+  color: #7cfc00;
+  font-weight: bold;
+  font-size: 0.9em;
+}
+
+.luck-buffs {
+  margin-left: 6px;
+}
+
+.luck-buff-tag {
+  background: rgba(124, 252, 0, 0.15);
+  border: 1px solid rgba(124, 252, 0, 0.4);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  font-size: 0.8em;
+}
+
+.investment-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9em;
+}
+
+.bond-item {
+  color: #87ceeb;
+}
+
+.stock-item {
+  color: #dda0dd;
+}
+
+.cashout-btn {
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+
+.cashout-btn:hover:not(:disabled) {
+  background: #66BB6A;
+}
+
+.cashout-btn:disabled {
+  background: #555;
+  color: #888;
+  cursor: not-allowed;
+}
+
 .red-card-text {
   color: #ff6b6b;
 }
@@ -1071,4 +1154,77 @@
   background: rgba(255, 0, 0, 0.2);
   border: 2px solid #ff0000;
   color: #ff4444;
+}
+
+/* Win screen */
+.win-screen {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+}
+
+.win-content {
+  background: rgba(0, 0, 0, 0.7);
+  border: 3px solid #ffd700;
+  border-radius: 16px;
+  padding: 50px 60px;
+  text-align: center;
+  max-width: 500px;
+  width: 100%;
+}
+
+.win-content h1 {
+  font-size: 2.5em;
+  color: #ffd700;
+  margin-bottom: 10px;
+  text-shadow: 2px 2px 8px rgba(255, 215, 0, 0.5);
+}
+
+.win-player-name {
+  font-size: 1.3em;
+  color: #ccc;
+  margin-bottom: 30px;
+}
+
+.final-stacks {
+  margin-top: 20px;
+}
+
+.final-stacks h3 {
+  color: #ffd700;
+  margin-bottom: 12px;
+}
+
+.standing-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.winner-row {
+  background: rgba(255, 215, 0, 0.15);
+  border: 1px solid #ffd700;
+}
+
+.eliminated-row {
+  background: rgba(255, 0, 0, 0.1);
+  border: 1px solid #666;
+  opacity: 0.6;
+}
+
+.standing-name {
+  font-weight: bold;
+}
+
+.standing-stack {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.crown {
+  font-size: 1.2em;
 }

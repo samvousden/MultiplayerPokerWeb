@@ -25,6 +25,7 @@ export enum Rank {
 export interface Card {
   suit: Suit;
   rank: Rank;
+  improved?: boolean; // true if card was improved by luck
 }
 
 export function cardToString(card: Card): string {
@@ -61,6 +62,6 @@ export function isJokerCard(card: Card): boolean {
 }
 
 export function cardToDisplayString(card: Card): string {
-  if (isJokerCard(card)) return '🃏 Joker';
+  if (isJokerCard(card)) return '🃏';
   return cardToString(card);
 }

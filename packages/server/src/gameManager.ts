@@ -23,6 +23,8 @@ import {
   cardToString,
   isJokerCard,
   JOKER_CARD,
+  getTotalLuck,
+  getBondCashOutValue,
 } from '@poker/shared';
 
 /**
@@ -153,10 +155,13 @@ export class GameManager {
       hasSleeveExtender: false,
       sleeveCard2: null,
       xrayCharges: 0,
-      luckLevel: 0,
+      permanentLuck: 0,
+      luckBuffs: [],
       hasRake: false,
       hiddenCameraCharges: 0,
       cheatedThisHand: false,
+      bonds: [],
+      stockOptions: [],
     });
 
     return playerId;
@@ -195,10 +200,13 @@ export class GameManager {
       hasSleeveExtender: false,
       sleeveCard2: null,
       xrayCharges: 0,
-      luckLevel: 0,
+      permanentLuck: 0,
+      luckBuffs: [],
       hasRake: false,
       hiddenCameraCharges: 0,
       cheatedThisHand: false,
+      bonds: [],
+      stockOptions: [],
     });
 
     // Add 3 bots with auto-ready
@@ -230,10 +238,13 @@ export class GameManager {
         hasSleeveExtender: false,
         sleeveCard2: null,
         xrayCharges: 0,
-        luckLevel: 0,
+        permanentLuck: 0,
+        luckBuffs: [],
         hasRake: false,
         hiddenCameraCharges: 0,
         cheatedThisHand: false,
+        bonds: [],
+        stockOptions: [],
       });
     }
 
@@ -264,9 +275,18 @@ export class GameManager {
       player.lastAction = undefined; // Clear last action
     }
 
-    // Reset cheat tracking for each player
+    // Reset cheat tracking for each player + tick investments + tick luck buffs
     for (const [_, ps] of this.playerPrivateState) {
       ps.cheatedThisHand = false;
+
+      // Age bonds and stock options
+      for (const bond of ps.bonds) bond.roundsHeld++;
+      for (const opt of ps.stockOptions) opt.roundsHeld++;
+
+      // Tick down luck buffs and remove expired ones
+      ps.luckBuffs = ps.luckBuffs
+        .map(b => ({ ...b, turnsRemaining: b.turnsRemaining - 1 }))
+        .filter(b => b.turnsRemaining > 0);
     }
 
     // Rotate dealer button
@@ -525,12 +545,12 @@ export class GameManager {
       return true;
     }
 
-    // Handle XRayGoggles
+    // Handle XRayGoggles — adds 3 charges to existing
     if (itemType === ShopItemType.XRayGoggles) {
       const cost = getPrice(ShopItemType.XRayGoggles);
       if (player.stack < cost) return false;
       player.stack -= cost;
-      privateState.xrayCharges = 3;
+      privateState.xrayCharges += 3;
       player.inventory.push(ShopItemType.XRayGoggles);
       return true;
     }
@@ -546,12 +566,12 @@ export class GameManager {
       return true;
     }
 
-    // Handle HiddenCamera
+    // Handle HiddenCamera — adds 3 charges to existing
     if (itemType === ShopItemType.HiddenCamera) {
       const cost = getPrice(ShopItemType.HiddenCamera);
       if (player.stack < cost) return false;
       player.stack -= cost;
-      privateState.hiddenCameraCharges = 3;
+      privateState.hiddenCameraCharges += 3;
       player.inventory.push(ShopItemType.HiddenCamera);
       return true;
     }
@@ -574,6 +594,51 @@ export class GameManager {
       if (player.stack < cost) return false;
       player.stack -= cost;
       privateState.bullets++;
+      return true;
+    }
+
+    // Handle Cigarette — +5 luck for 5 hands
+    if (itemType === ShopItemType.Cigarette) {
+      const cost = getPrice(ShopItemType.Cigarette);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.luckBuffs.push({ amount: 5, turnsRemaining: 5 });
+      return true;
+    }
+
+    // Handle Whiskey — +10 luck for 3 hands
+    if (itemType === ShopItemType.Whiskey) {
+      const cost = getPrice(ShopItemType.Whiskey);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.luckBuffs.push({ amount: 10, turnsRemaining: 3 });
+      return true;
+    }
+
+    // Handle Lucky Charm — permanently +7 luck
+    if (itemType === ShopItemType.LuckyCharm) {
+      const cost = getPrice(ShopItemType.LuckyCharm);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.permanentLuck += 7;
+      return true;
+    }
+
+    // Handle Bond — $150 investment, value increases $50/hand
+    if (itemType === ShopItemType.Bond) {
+      const cost = getPrice(ShopItemType.Bond);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.bonds.push({ roundsHeld: 0 });
+      return true;
+    }
+
+    // Handle Stock Option — $100 investment, cashable after 3 hands
+    if (itemType === ShopItemType.StockOption) {
+      const cost = getPrice(ShopItemType.StockOption);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.stockOptions.push({ roundsHeld: 0 });
       return true;
     }
 
@@ -613,6 +678,35 @@ export class GameManager {
     player.stack -= cost;
     player.inventory.push(itemType);
     return true;
+  }
+
+  cashOutBond(playerId: number, bondIndex: number): { success: boolean; amount: number; error?: string } {
+    const player = this.gameState.players.find(p => p.id === playerId);
+    const ps = this.playerPrivateState.get(playerId);
+    if (!player || !ps) return { success: false, amount: 0, error: 'Player not found' };
+    if (bondIndex < 0 || bondIndex >= ps.bonds.length) return { success: false, amount: 0, error: 'Invalid bond' };
+
+    const bond = ps.bonds[bondIndex];
+    const value = getBondCashOutValue(bond);
+    player.stack += value;
+    ps.bonds.splice(bondIndex, 1);
+    return { success: true, amount: value };
+  }
+
+  cashOutStockOption(playerId: number, optionIndex: number): { success: boolean; amount: number; error?: string } {
+    const player = this.gameState.players.find(p => p.id === playerId);
+    const ps = this.playerPrivateState.get(playerId);
+    if (!player || !ps) return { success: false, amount: 0, error: 'Player not found' };
+    if (optionIndex < 0 || optionIndex >= ps.stockOptions.length) return { success: false, amount: 0, error: 'Invalid stock option' };
+
+    const option = ps.stockOptions[optionIndex];
+    if (option.roundsHeld < 3) return { success: false, amount: 0, error: 'Must wait 3 hands before cashing out' };
+
+    // 1 in 3 chance for $500, otherwise $0
+    const value = Math.random() < (1 / 3) ? 500 : 0;
+    player.stack += value;
+    ps.stockOptions.splice(optionIndex, 1);
+    return { success: true, amount: value };
   }
 
   playerDisconnected(playerId: number): void {
@@ -671,6 +765,10 @@ export class GameManager {
     return privateState?.hasCardSleeveUnlock || false;
   }
 
+  hasUsedSleeveThisHand(playerId: number): boolean {
+    return this.sleeveSwappedThisRound.has(playerId);
+  }
+
   shootPlayer(shooterId: number, targetId: number): { success: boolean; backfired: boolean; error?: string } {
     if (this.gameState.phase !== HandPhase.Showdown) {
       return { success: false, backfired: false, error: 'Can only shoot during showdown' };
@@ -722,11 +820,16 @@ export class GameManager {
       [ShopItemType.ExtraCard]: 6,          // Common
       [ShopItemType.Joker]: 1,              // Rare
       [ShopItemType.SleeveExtender]: 1,     // Rare
-      [ShopItemType.XRayGoggles]: 6,        // Common
-      [ShopItemType.Rake]: 2,              // Uncommon
-      [ShopItemType.HiddenCamera]: 6,       // Common
+      [ShopItemType.XRayGoggles]: 4,        // Uncommon
+      [ShopItemType.Rake]: 4,              // Uncommon
+      [ShopItemType.HiddenCamera]: 4,       // Uncommon
       [ShopItemType.Gun]: 1,               // Rare
       [ShopItemType.Bullet]: 6,            // Common
+      [ShopItemType.Cigarette]: 6,         // Common
+      [ShopItemType.Whiskey]: 6,           // Common
+      [ShopItemType.LuckyCharm]: 4,        // Uncommon
+      [ShopItemType.Bond]: 6,             // Common
+      [ShopItemType.StockOption]: 4,       // Uncommon
     };
 
     // Build weighted pool
@@ -743,8 +846,8 @@ export class GameManager {
     while (selected.length < 3 && pool.length > 0) {
       const idx = Math.floor(Math.random() * pool.length);
       const type = pool[idx];
-      if (type === ShopItemType.ExtraCard || type === ShopItemType.Bullet) {
-        // ExtraCard and Bullet can appear in multiple slots
+      if (type === ShopItemType.ExtraCard || type === ShopItemType.Bullet || type === ShopItemType.Cigarette || type === ShopItemType.Whiskey) {
+        // These can appear in multiple slots
         selected.push(type);
         pool.splice(idx, 1); // Remove only this one ticket
       } else if (!usedTypes.has(type)) {
@@ -783,7 +886,15 @@ export class GameManager {
         slot.rarity = ShopItemRarity.Rare;
       } else if (type === ShopItemType.Gun) {
         slot.rarity = ShopItemRarity.Rare;
-      } else if (type === ShopItemType.Bullet) {
+      } else if (type === ShopItemType.XRayGoggles) {
+        slot.rarity = ShopItemRarity.Uncommon;
+      } else if (type === ShopItemType.HiddenCamera) {
+        slot.rarity = ShopItemRarity.Uncommon;
+      } else if (type === ShopItemType.LuckyCharm) {
+        slot.rarity = ShopItemRarity.Uncommon;
+      } else if (type === ShopItemType.StockOption) {
+        slot.rarity = ShopItemRarity.Uncommon;
+      } else if (type === ShopItemType.Bullet || type === ShopItemType.Cigarette || type === ShopItemType.Whiskey || type === ShopItemType.Bond) {
         slot.rarity = ShopItemRarity.Common;
       }
 
@@ -934,12 +1045,67 @@ export class GameManager {
     let deckIndex = 0;
     for (const player of this.gameState.players) {
       if (player.isSeated && player.isReady && !player.isEliminated) {
-        const cardA = this.deck[deckIndex++];
-        const cardB = this.deck[deckIndex++];
+        let cardA = this.deck[deckIndex++];
+        let cardB = this.deck[deckIndex++];
+
+        const ps = this.playerPrivateState.get(player.id);
+        const luck = ps ? getTotalLuck(ps) : 0;
+        if (luck > 0) {
+          cardA = this.applyLuckToHoleCard(cardA, cardB, luck);
+          cardB = this.applyLuckToHoleCard(cardB, cardA, luck);
+        }
+
         this.holeCards.set(player.id, [cardA, cardB]);
         player.isInHand = true;
       }
     }
+  }
+
+  /** Apply luck to a single hole card. otherCard is the partner hole card for duplication. */
+  private applyLuckToHoleCard(card: Card, otherCard: Card, luck: number): Card {
+    if (isJokerCard(card)) return card;
+    const chance = luck / 100; // each point = 1%
+    if (Math.random() >= chance) return card; // no improvement
+
+    const roll = Math.random();
+    if (roll < 0.5) {
+      // 50%: increase rank by 1 (no change for Aces)
+      if (card.rank >= Rank.Ace) return { ...card, improved: true };
+      return { suit: card.suit, rank: (card.rank + 1) as Rank, improved: true };
+    } else if (roll < 0.6) {
+      return { suit: card.suit, rank: Rank.Jack, improved: true };
+    } else if (roll < 0.7) {
+      return { suit: card.suit, rank: Rank.Queen, improved: true };
+    } else if (roll < 0.8) {
+      return { suit: card.suit, rank: Rank.King, improved: true };
+    } else if (roll < 0.9) {
+      return { suit: card.suit, rank: Rank.Ace, improved: true };
+    } else {
+      // 10%: exact duplicate of the other card
+      return { suit: otherCard.suit, rank: otherCard.rank, improved: true };
+    }
+  }
+
+  /** Apply luck to a community card for all players with luck > 0. */
+  private applyLuckToCommunityCard(card: Card): Card {
+    if (isJokerCard(card)) return card;
+    for (const player of this.gameState.players) {
+      if (!player.isInHand || player.hasFolded) continue;
+      const ps = this.playerPrivateState.get(player.id);
+      if (!ps) continue;
+      const luck = getTotalLuck(ps);
+      if (luck <= 0) continue;
+
+      const chance = luck * 0.0001; // 0.01% per luck point
+      if (Math.random() < chance) {
+        const holeCards = this.holeCards.get(player.id);
+        if (holeCards && holeCards.length > 0) {
+          const pick = holeCards[Math.floor(Math.random() * holeCards.length)];
+          return { suit: pick.suit, rank: pick.rank, improved: true };
+        }
+      }
+    }
+    return card;
   }
 
   private postBlinds(): void {
@@ -1007,16 +1173,16 @@ export class GameManager {
     this.gameState.currentBetToMatch = 0;
     this.lastRaiserId = 0; // Reset for new round
     this.playersActedThisRound.clear(); // Reset action tracking for new round
-    this.sleeveSwappedThisRound.clear(); // Reset sleeve swap tracking for new round
+    // NOTE: sleeveSwappedThisRound is intentionally NOT cleared here — once per hand
 
     if (this.gameState.round === BettingRound.Preflop) {
       this.gameState.board = this.dealFlop();
       this.gameState.round = BettingRound.Flop;
     } else if (this.gameState.round === BettingRound.Flop) {
-      this.gameState.board.push(this.dealCard());
+      this.gameState.board.push(this.dealCommunityCard());
       this.gameState.round = BettingRound.Turn;
     } else if (this.gameState.round === BettingRound.Turn) {
-      this.gameState.board.push(this.dealCard());
+      this.gameState.board.push(this.dealCommunityCard());
       this.gameState.round = BettingRound.River;
     } else if (this.gameState.round === BettingRound.River) {
       this.gameState.phase = HandPhase.Showdown;
@@ -1024,16 +1190,35 @@ export class GameManager {
       return;
     }
 
-    // For postflop, action starts with small blind (dealer+1)
+    // Find first non-folded, non-all-in player to act (starting from small blind = dealer+1)
     const dealerIndex = this.gameState.players.findIndex(p => p.id === this.gameState.dealerPlayerId);
-    const smallBlindIndex = (dealerIndex + 1) % this.gameState.players.length;
-    const firstToAct = this.gameState.players[smallBlindIndex].id;
-    this.gameState.activePlayerId = firstToAct;
-    this.lastRaiserId = firstToAct; // First to act is initial "last raiser"
+    const playerCount = this.gameState.players.length;
+    let firstToActId = 0;
+    for (let i = 1; i <= playerCount; i++) {
+      const candidate = this.gameState.players[(dealerIndex + i) % playerCount];
+      if (candidate.isInHand && !candidate.hasFolded && !candidate.isAllIn) {
+        firstToActId = candidate.id;
+        break;
+      }
+    }
+
+    if (firstToActId === 0) {
+      // All remaining players are all-in — run out the board automatically without betting
+      this.advanceBettingRound();
+      return;
+    }
+
+    this.gameState.activePlayerId = firstToActId;
+    this.lastRaiserId = firstToActId; // First to act is initial "last raiser"
   }
 
   private dealFlop(): Card[] {
-    return [this.dealCard(), this.dealCard(), this.dealCard()];
+    return [this.dealCommunityCard(), this.dealCommunityCard(), this.dealCommunityCard()];
+  }
+
+  private dealCommunityCard(): Card {
+    const raw = this.deck.pop() || { suit: Suit.Clubs, rank: Rank.Two };
+    return this.applyLuckToCommunityCard(raw);
   }
 
   private dealCard(): Card {

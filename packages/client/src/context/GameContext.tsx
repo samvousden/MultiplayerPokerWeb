@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { GameState, PokerAction, PlayerPublicState, Card, ShopSlotItem } from '@poker/shared';
+import { GameState, PokerAction, PlayerPublicState, Card, ShopSlotItem, BondState, StockOptionState, LuckBuff } from '@poker/shared';
 
 interface GameContextType {
   gameState: GameState | null;
@@ -10,6 +10,7 @@ interface GameContextType {
   holeCards: Card[] | null;
   sleeveCard: Card | null;
   sleeveCard2: Card | null;
+  sleeveUsedThisHand: boolean;
   allPlayerCards: Map<number, Card[]> | null;
   winnerId: number | null;
   winnerIds: number[];
@@ -21,6 +22,10 @@ interface GameContextType {
   hasGun: boolean;
   bullets: number;
   shotFiredEvent: { shooterId: number; targetId: number; backfired: boolean } | null;
+  bonds: BondState[];
+  stockOptions: StockOptionState[];
+  totalLuck: number;
+  luckBuffs: LuckBuff[];
   
   // Actions
   joinTable: (playerName: string) => Promise<number | false>;
@@ -33,6 +38,8 @@ interface GameContextType {
   useXRay: () => void;
   useHiddenCamera: (targetPlayerId: number) => void;
   shootPlayer: (targetPlayerId: number) => void;
+  cashOutBond: (bondIndex: number) => void;
+  cashOutStockOption: (optionIndex: number) => void;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -45,6 +52,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [holeCards, setHoleCards] = useState<Card[] | null>(null);
   const [sleeveCard, setSleeveCard] = useState<Card | null>(null);
   const [sleeveCard2, setSleeveCard2] = useState<Card | null>(null);
+  const [sleeveUsedThisHand, setSleeveUsedThisHand] = useState(false);
   const [allPlayerCards, setAllPlayerCards] = useState<Map<number, Card[]> | null>(null);
   const [winnerId, setWinnerId] = useState<number | null>(null);
   const [winnerIds, setWinnerIds] = useState<number[]>([]);
@@ -56,6 +64,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [hasGun, setHasGun] = useState(false);
   const [bullets, setBullets] = useState(0);
   const [shotFiredEvent, setShotFiredEvent] = useState<{ shooterId: number; targetId: number; backfired: boolean } | null>(null);
+  const [bonds, setBonds] = useState<BondState[]>([]);
+  const [stockOptions, setStockOptions] = useState<StockOptionState[]>([]);
+  const [totalLuck, setTotalLuck] = useState(0);
+  const [luckBuffs, setLuckBuffs] = useState<LuckBuff[]>([]);
 
   const serverUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
@@ -91,6 +103,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setRevealedCards(new Map());
       setPeekedCard(null);
       setShotFiredEvent(null);
+      setSleeveUsedThisHand(false);
     });
 
     newSocket.on('hole-cards', (cards: Card[]) => {
@@ -120,9 +133,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     });
 
-    newSocket.on('sleeve-card-updated', (data: { sleeveCard: Card | null; sleeveCard2?: Card | null }) => {
+    newSocket.on('sleeve-card-updated', (data: { sleeveCard: Card | null; sleeveCard2?: Card | null; sleeveUsedThisHand?: boolean }) => {
       setSleeveCard(data.sleeveCard);
       setSleeveCard2(data.sleeveCard2 ?? null);
+      if (data.sleeveUsedThisHand !== undefined) setSleeveUsedThisHand(data.sleeveUsedThisHand);
     });
 
     newSocket.on('shot-fired', (data: { shooterId: number; targetId: number; backfired: boolean }) => {
@@ -262,9 +276,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (response.hiddenCameraCharges !== undefined) setHiddenCameraCharges(response.hiddenCameraCharges);
         if (response.hasGun !== undefined) setHasGun(response.hasGun);
         if (response.bullets !== undefined) setBullets(response.bullets);
+        if (response.sleeveUsedThisHand !== undefined) setSleeveUsedThisHand(response.sleeveUsedThisHand);
+        if (response.bonds) setBonds(response.bonds);
+        if (response.stockOptions) setStockOptions(response.stockOptions);
+        if (response.totalLuck !== undefined) setTotalLuck(response.totalLuck);
+        if (response.luckBuffs) setLuckBuffs(response.luckBuffs);
       }
     });
   }, [socket, playerId]);
+
+  const cashOutBond = useCallback((bondIndex: number) => {
+    if (!socket || !playerId) return;
+    socket.emit('cash-out-bond', playerId, bondIndex, () => {
+      refreshSleeveCard();
+    });
+  }, [socket, playerId, refreshSleeveCard]);
+
+  const cashOutStockOption = useCallback((optionIndex: number) => {
+    if (!socket || !playerId) return;
+    socket.emit('cash-out-stock-option', playerId, optionIndex, () => {
+      refreshSleeveCard();
+    });
+  }, [socket, playerId, refreshSleeveCard]);
 
   // Refresh sleeve card when player joins or on game state updates
   useEffect(() => {
@@ -283,6 +316,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         holeCards,
         sleeveCard,
         sleeveCard2,
+        sleeveUsedThisHand,
         allPlayerCards,
         winnerId,
         winnerIds,
@@ -294,6 +328,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         hasGun,
         bullets,
         shotFiredEvent,
+        bonds,
+        stockOptions,
+        totalLuck,
+        luckBuffs,
         joinTable,
         playVsBots,
         setReady,
@@ -304,6 +342,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         useXRay,
         useHiddenCamera,
         shootPlayer,
+        cashOutBond,
+        cashOutStockOption,
       }}
     >
       {children}

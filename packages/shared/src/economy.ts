@@ -6,6 +6,8 @@ export enum ShopItemType {
   SleeveCard = 10,
   XrayCharge = 11,
   Cigarette = 12,
+  Whiskey = 13,
+  LuckyCharm = 14,
   Gun = 20,
   Bullet = 21,
   CardSleeveUnlock = 30,
@@ -15,6 +17,8 @@ export enum ShopItemType {
   XRayGoggles = 40,
   Rake = 41,
   HiddenCamera = 42,
+  Bond = 50,
+  StockOption = 51,
 }
 
 export enum UseItemType {
@@ -32,6 +36,21 @@ export enum UseItemType {
   ShootPlayer = 30,
   UseXRayGoggles = 40,
   UseHiddenCamera = 41,
+  CashOutBond = 50,
+  CashOutStockOption = 51,
+}
+
+export interface LuckBuff {
+  amount: number;
+  turnsRemaining: number;
+}
+
+export interface BondState {
+  roundsHeld: number; // increments each hand
+}
+
+export interface StockOptionState {
+  roundsHeld: number; // increments each hand, cashable at 3+
 }
 
 export interface PlayerPrivateState {
@@ -44,10 +63,13 @@ export interface PlayerPrivateState {
   hasSleeveExtender: boolean;
   sleeveCard2: Card | null;
   xrayCharges: number;
-  luckLevel: number; // from cigarettes
+  permanentLuck: number;
+  luckBuffs: LuckBuff[];
   hasRake: boolean;
   hiddenCameraCharges: number;
   cheatedThisHand: boolean;
+  bonds: BondState[];
+  stockOptions: StockOptionState[];
 }
 
 export enum ShopItemRarity {
@@ -70,15 +92,19 @@ export const ShopCatalog = {
   SleeveCard: 40,
   XrayCharge: 10,
   Cigarette: 25,
+  Whiskey: 50,
+  LuckyCharm: 100,
   Gun: 400,
   Bullet: 30,
   CardSleeveUnlock: 200,
-  ExtraCard: 0, // Dynamic pricing applied at purchase time based on card rank
+  ExtraCard: 0,
   Joker: 100,
   SleeveExtender: 300,
   XRayGoggles: 150,
   Rake: 300,
   HiddenCamera: 150,
+  Bond: 150,
+  StockOption: 100,
 } as const;
 
 export function getPrice(item: ShopItemType): number {
@@ -88,15 +114,19 @@ export function getPrice(item: ShopItemType): number {
     [ShopItemType.SleeveCard]: 40,
     [ShopItemType.XrayCharge]: 10,
     [ShopItemType.Cigarette]: 25,
+    [ShopItemType.Whiskey]: 50,
+    [ShopItemType.LuckyCharm]: 100,
     [ShopItemType.Gun]: 400,
     [ShopItemType.Bullet]: 30,
     [ShopItemType.CardSleeveUnlock]: 200,
-    [ShopItemType.ExtraCard]: 0, // Dynamic; use getCardPrice() instead
+    [ShopItemType.ExtraCard]: 0,
     [ShopItemType.Joker]: 100,
     [ShopItemType.SleeveExtender]: 300,
     [ShopItemType.XRayGoggles]: 150,
     [ShopItemType.Rake]: 300,
     [ShopItemType.HiddenCamera]: 150,
+    [ShopItemType.Bond]: 150,
+    [ShopItemType.StockOption]: 100,
   };
   return prices[item];
 }
@@ -120,16 +150,20 @@ export function getShopItemInfo(type: ShopItemType): { name: string; description
     [ShopItemType.BankAccountUnlock]: { name: 'Bank Account', description: 'Unlock a bank account' },
     [ShopItemType.SleeveCard]: { name: 'Sleeve Card', description: 'A card for your sleeve' },
     [ShopItemType.XrayCharge]: { name: 'X-Ray Charge', description: 'Peek at the next deck card' },
-    [ShopItemType.Cigarette]: { name: 'Cigarette', description: 'Increases luck' },
+    [ShopItemType.Cigarette]: { name: 'Cigarette', description: '+5 luck for 5 hands' },
+    [ShopItemType.Whiskey]: { name: 'Whiskey', description: '+10 luck for 3 hands' },
+    [ShopItemType.LuckyCharm]: { name: 'Lucky Charm', description: 'Permanently +7 luck' },
     [ShopItemType.Gun]: { name: 'Gun', description: 'For use on dirty cheaters' },
     [ShopItemType.Bullet]: { name: 'Bullet', description: 'You show those dirty cheaters who they\'re messing with' },
     [ShopItemType.CardSleeveUnlock]: { name: 'Card Sleeve Unlock', description: 'A spot to hide a card in your sleeve' },
     [ShopItemType.ExtraCard]: { name: 'Extra Card', description: 'A random card from the deck to put in your sleeve' },
     [ShopItemType.SleeveExtender]: { name: 'Card Sleeve Extender', description: 'Expand your sleeve to hold a second card' },
     [ShopItemType.Joker]: { name: 'Joker', description: 'A wild card that becomes the best possible card at showdown' },
-    [ShopItemType.XRayGoggles]: { name: 'X-Ray Goggles', description: 'Peek at the next community card (3 charges)' },
+    [ShopItemType.XRayGoggles]: { name: 'X-Ray Goggles', description: 'Peek at the next community card (+3 charges)' },
     [ShopItemType.Rake]: { name: 'Rake', description: 'Secretly take 5% of every pot' },
-    [ShopItemType.HiddenCamera]: { name: 'Hidden Camera', description: 'See one of an opponent\'s hole cards at random (3 charges)' },
+    [ShopItemType.HiddenCamera]: { name: 'Hidden Camera', description: 'See one of an opponent\'s hole cards (+3 charges)' },
+    [ShopItemType.Bond]: { name: 'Bond', description: 'Invest $150. Cash out value increases by $50 each hand' },
+    [ShopItemType.StockOption]: { name: 'Stock Option', description: 'Invest $100. After 3 hands: 1/3 chance for $500, 2/3 chance for $0' },
   };
   return info[type];
 }
@@ -162,9 +196,18 @@ export function getEligibleShopItems(state: PlayerPrivateState): ShopItemType[] 
   // Bullets (requires gun, can always buy more)
   if (state.hasGun) items.push(ShopItemType.Bullet);
 
-  // Charge-based items (can rebuy when charges are 0)
-  if (state.xrayCharges === 0) items.push(ShopItemType.XRayGoggles);
-  if (state.hiddenCameraCharges === 0) items.push(ShopItemType.HiddenCamera);
+  // Charge-based items (can always buy more — each purchase adds charges)
+  items.push(ShopItemType.XRayGoggles);
+  items.push(ShopItemType.HiddenCamera);
+
+  // Luck items (always available, stackable)
+  items.push(ShopItemType.Cigarette);
+  items.push(ShopItemType.Whiskey);
+  items.push(ShopItemType.LuckyCharm);
+
+  // Investment items (always available, can own multiple)
+  items.push(ShopItemType.Bond);
+  items.push(ShopItemType.StockOption);
 
   return items;
 }
@@ -181,4 +224,19 @@ export function isStackable(item: ShopItemType): boolean {
 
 export function requiresGunForBullets(item: ShopItemType): boolean {
   return item === ShopItemType.Bullet;
+}
+
+export function getTotalLuck(state: PlayerPrivateState): number {
+  const buffLuck = state.luckBuffs.reduce((sum, b) => sum + b.amount, 0);
+  return state.permanentLuck + buffLuck;
+}
+
+export function getBondCashOutValue(bond: BondState): number {
+  return 150 + 50 * bond.roundsHeld;
+}
+
+export function getStockOptionCashOutValue(option: StockOptionState): number | null {
+  if (option.roundsHeld < 3) return null; // Not yet cashable
+  // 1 in 3 chance for $500, otherwise $0 — value is resolved at cash-out time
+  return null; // Resolved dynamically
 }

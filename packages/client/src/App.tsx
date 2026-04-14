@@ -4,6 +4,7 @@ import { LobbyScreen } from './components/LobbyScreen';
 import { GameBoard } from './components/GameBoard';
 import { ShowdownScreen } from './components/ShowdownScreen';
 import { ItemShop } from './components/ItemShop';
+import { WinScreen } from './components/WinScreen';
 import { HandPhase } from '@poker/shared';
 import './App.css';
 
@@ -18,6 +19,12 @@ const AppContent: React.FC = () => {
 
   if (phase === HandPhase.Lobby || phase === undefined) {
     return <LobbyScreen />;
+  }
+
+  // Show win screen when only 1 non-eliminated player remains
+  const activePlayers = gameState?.players.filter(p => !p.isEliminated) ?? [];
+  if (activePlayers.length === 1 && gameState!.players.length > 1) {
+    return <WinScreen />;
   }
 
   if (phase === HandPhase.Showdown) {

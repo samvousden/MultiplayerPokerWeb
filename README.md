@@ -1,9 +1,10 @@
 # Sam's Poker Game
 Working title
+
+
 A poker game where players can buy cheats and advantages at the black market:
-- **Frontend**: React + TypeScript (AWS Amplify ready)
+- **Frontend**: React + TypeScript 
 - **Backend**: Node.js + Express + Socket.io
-- **Deployment**: AWS Amplify (frontend + backend via Lambda)
 
 ## Project Structure
 
@@ -16,20 +17,20 @@ packages/
 
 ## Gameplay
 
-![bottom text](./screenshots/gameplay_screen.png)
+![Alt Text](./screenshots/gameplay_screen.png)
 
 Plays like regular poker. In between rounds, players can visit the item shop to purchase items to adjust their odds!
-![bottom text](./screenshots/shop.png)
+![Alt text](./screenshots/shop.png)
 
 Purchased items will show up in the player's game screen and have different effects.
-![bottom text](./screenshots/gameplay_sleeve.png)
-![bottom text](./screenshots/more_items.png)
+![Alt text](./screenshots/gameplay_sleeve.png)
+![Alt text](./screenshots/more_items.png)
 
 Some items are used after the showdown. Catch a player cheating to win their stack!
-![bottom text](./screenshots/win_screen_gun.png)
+![Alt text](./screenshots/win_screen_gun.png)
 
 Running out of money means you're eliminated
-![bottom text](./screenshots/eliminated.png)
+![Alt text](./screenshots/eliminated.png)
 
 ## Quick Start
 

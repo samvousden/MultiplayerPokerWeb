@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
-import { PokerActionType, cardToString, cardToDisplayString, Suit, UseItemType, isJokerCard } from '@poker/shared';
+import { PokerActionType, cardToString, cardToDisplayString, Suit, UseItemType, isJokerCard, getBondCashOutValue } from '@poker/shared';
 
 const isRedCard = (suit: Suit): boolean => {
   return suit === Suit.Hearts || suit === Suit.Diamonds;
@@ -24,7 +24,7 @@ const formatLastAction = (lastAction?: { type: number; amount?: number }): strin
 };
 
 export const GameBoard: React.FC = () => {
-  const { gameState, playerId, holeCards, sleeveCard, sleeveCard2, useItem, submitAction, xrayCharges, hiddenCameraCharges, revealedCards, peekedCard, useXRay, useHiddenCamera } = useGame();
+  const { gameState, playerId, holeCards, sleeveCard, sleeveCard2, sleeveUsedThisHand, useItem, submitAction, xrayCharges, hiddenCameraCharges, revealedCards, peekedCard, useXRay, useHiddenCamera, bonds, stockOptions, totalLuck, luckBuffs, cashOutBond, cashOutStockOption } = useGame();
   const [raiseAmount, setRaiseAmount] = useState<string>('');
 
   if (!gameState || !playerId) {
@@ -33,7 +33,7 @@ export const GameBoard: React.FC = () => {
 
   const currentPlayer = gameState.players.find(p => p.id === playerId);
   const minRaise = gameState.currentBetToMatch + 10;
-  const canSwap = gameState.activePlayerId === playerId && !currentPlayer?.isAllIn && (sleeveCard !== null || sleeveCard2 !== null);
+  const canSwap = gameState.activePlayerId === playerId && !currentPlayer?.isAllIn && !sleeveUsedThisHand && (sleeveCard !== null || sleeveCard2 !== null);
   const canCheck = currentPlayer ? gameState.currentBetToMatch === currentPlayer.committedThisRound : false;
 
   const handleRaise = () => {
@@ -62,8 +62,9 @@ export const GameBoard: React.FC = () => {
         {holeCards && holeCards.length > 0 ? (
           <div className="hole-cards">
             {holeCards.map((card, i) => (
-              <div key={i} className={`card hole-card ${isJokerCard(card) ? 'joker-card' : isRedCard(card.suit) ? 'red-card' : ''}`}>
+              <div key={i} className={`card hole-card ${isJokerCard(card) ? 'joker-card' : isRedCard(card.suit) ? 'red-card' : ''} ${card.improved ? 'improved-card' : ''}`}>
                 {cardToDisplayString(card)}
+                {card.improved && <span className="gold-sticker">★</span>}
               </div>
             ))}
           </div>
@@ -97,7 +98,7 @@ export const GameBoard: React.FC = () => {
             </div>
           )}
           {!canSwap && sleeveCard && (
-            <p className="swap-disabled-msg">Swaps only allowed on your turn</p>
+            <p className="swap-disabled-msg">{sleeveUsedThisHand ? 'Already used this hand' : 'Swaps only allowed on your turn'}</p>
           )}
         </div>
       )}
@@ -127,7 +128,7 @@ export const GameBoard: React.FC = () => {
             </div>
           )}
           {!canSwap && sleeveCard2 && (
-            <p className="swap-disabled-msg">Swaps only allowed on your turn</p>
+            <p className="swap-disabled-msg">{sleeveUsedThisHand ? 'Already used this hand' : 'Swaps only allowed on your turn'}</p>
           )}
         </div>
       )}
@@ -168,12 +169,52 @@ export const GameBoard: React.FC = () => {
         </div>
       )}
 
+      {(totalLuck > 0 || bonds.length > 0 || stockOptions.length > 0) && (
+        <div className="investments-section">
+          {totalLuck > 0 && (
+            <div className="luck-display">
+              🍀 Luck: {totalLuck}
+              {luckBuffs.length > 0 && (
+                <span className="luck-buffs">
+                  {luckBuffs.map((b, i) => (
+                    <span key={i} className="luck-buff-tag">+{b.amount} ({b.turnsRemaining}h)</span>
+                  ))}
+                </span>
+              )}
+            </div>
+          )}
+          {bonds.length > 0 && (
+            <div className="bonds-display">
+              {bonds.map((bond, i) => (
+                <div key={i} className="investment-item bond-item">
+                  <span>📄 Bond: ${getBondCashOutValue(bond)}</span>
+                  <button className="cashout-btn" onClick={() => cashOutBond(i)}>Cash Out</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {stockOptions.length > 0 && (
+            <div className="stocks-display">
+              {stockOptions.map((opt, i) => (
+                <div key={i} className="investment-item stock-item">
+                  <span>📈 Stock: {opt.roundsHeld >= 3 ? 'Ready!' : `${3 - opt.roundsHeld} hands left`}</span>
+                  <button className="cashout-btn" onClick={() => cashOutStockOption(i)} disabled={opt.roundsHeld < 3}>
+                    {opt.roundsHeld >= 3 ? 'Cash Out (1/3 → $500)' : 'Waiting...'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="board-cards">
         <h3>Community Cards</h3>
         <div className="cards">
           {gameState.board.map((card, i) => (
-            <div key={i} className={`card ${isRedCard(card.suit) ? 'red-card' : ''}`}>
+            <div key={i} className={`card ${isRedCard(card.suit) ? 'red-card' : ''} ${card.improved ? 'improved-card' : ''}`}>
               {cardToString(card)}
+              {card.improved && <span className="gold-sticker">★</span>}
             </div>
           ))}
         </div>
