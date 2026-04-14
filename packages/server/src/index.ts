@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import { GameManager } from './gameManager.js';
-import { GameState, PokerAction } from '@poker/shared';
+import { GameState, PokerAction, ShopItemType, Card, getCardPrice } from '@poker/shared';
 
 const app = express();
 const httpServer = createServer(app);
@@ -286,6 +286,54 @@ io.on('connection', (socket) => {
     
     if (success) {
       io.emit('game-state-updated', gameManager.getGameState());
+      
+      // Send updated sleeve card info to the player who used the item
+      const sleeveCard = gameManager.getPlayerSleeveCard(playerId);
+      socket.emit('sleeve-card-updated', { sleeveCard });
+    }
+  });
+
+  socket.on('get-sleeve-card', (playerId: number, callback) => {
+    const sleeveCard = gameManager.getPlayerSleeveCard(playerId);
+    const hasUnlock = gameManager.hasCardSleeveUnlock(playerId);
+    callback({ success: true, sleeveCard, hasUnlock });
+  });
+
+  socket.on('get-extra-card-preview', (playerId: number, callback) => {
+    const player = gameManager.getGameState().players.find(p => p.id === playerId);
+    if (!player) {
+      callback({ success: false, error: 'Player not found' });
+      return;
+    }
+
+    // Get a random available card for preview
+    const card = gameManager.getRandomAvailableCardFor(playerId);
+    if (!card) {
+      callback({ success: false, error: 'No cards available' });
+      return;
+    }
+
+    const price = getCardPrice(card);
+    callback({ success: true, card, price });
+  });
+
+  socket.on('buy-extra-card', (playerId: number, card: Card, callback) => {
+    const success = gameManager.buyExtraCard(playerId, card);
+    
+    if (success) {
+      io.emit('game-state-updated', gameManager.getGameState());
+      
+      // Send updated sleeve card info to the player who bought the card
+      const sleeveCard = gameManager.getPlayerSleeveCard(playerId);
+      const playerSocketId = Array.from(playerSessions.entries())
+        .find(([_, pid]) => pid === playerId)?.[0];
+      if (playerSocketId) {
+        io.to(playerSocketId).emit('sleeve-card-updated', { sleeveCard });
+      }
+      
+      callback({ success: true });
+    } else {
+      callback({ success: false, error: 'Unable to purchase card' });
     }
   });
 

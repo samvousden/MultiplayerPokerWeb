@@ -1,6 +1,7 @@
 {
   "name": "@poker/server",
   "version": "1.0.0",
+  "type": "module",
   "description": "Express server with Socket.io for multiplayer poker",
   "main": "dist/index.js",
   "scripts": {

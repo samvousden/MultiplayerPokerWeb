@@ -10,6 +10,11 @@ import {
   Rank,
   evaluateBestHand,
   ItemType,
+  PlayerPrivateState,
+  ShopItemType,
+  UseItemType,
+  getCardPrice,
+  cardToString,
 } from '@poker/shared';
 
 /**
@@ -19,6 +24,7 @@ import {
 export class GameManager {
   private gameState: GameState;
   private holeCards: Map<number, [Card, Card]> = new Map();
+  private playerPrivateState: Map<number, PlayerPrivateState> = new Map();
   private deck: Card[] = [];
   private rng = Math.random;
   private lastRaiserId: number = 0; // Track who last raised/bet
@@ -125,12 +131,25 @@ export class GameManager {
       inventory: [],
     });
 
+    // Initialize private state for this player
+    this.playerPrivateState.set(playerId, {
+      hasBankAccount: false,
+      bankBalance: 0,
+      hasGun: false,
+      bullets: 0,
+      hasCardSleeveUnlock: false,
+      sleeveCard: null,
+      xrayCharges: 0,
+      luckLevel: 0,
+    });
+
     return playerId;
   }
 
   playVsBots(playerName: string): number {
     // Clear any existing players
     this.gameState.players = [];
+    this.playerPrivateState.clear();
 
     // Add human player
     const playerId = 1;
@@ -149,10 +168,22 @@ export class GameManager {
       inventory: [],
     });
 
+    this.playerPrivateState.set(playerId, {
+      hasBankAccount: false,
+      bankBalance: 0,
+      hasGun: false,
+      bullets: 0,
+      hasCardSleeveUnlock: false,
+      sleeveCard: null,
+      xrayCharges: 0,
+      luckLevel: 0,
+    });
+
     // Add 3 bots with auto-ready
     for (let i = 1; i <= 3; i++) {
+      const botId = i + 1;
       this.gameState.players.push({
-        id: i + 1,
+        id: botId,
         name: `bot ${i}`,
         stack: 1000,
         committedThisRound: 0,
@@ -164,6 +195,17 @@ export class GameManager {
         isAllIn: false,
         isBot: true,
         inventory: [],
+      });
+
+      this.playerPrivateState.set(botId, {
+        hasBankAccount: false,
+        bankBalance: 0,
+        hasGun: false,
+        bullets: 0,
+        hasCardSleeveUnlock: false,
+        sleeveCard: null,
+        xrayCharges: 0,
+        luckLevel: 0,
       });
     }
 
@@ -323,28 +365,105 @@ export class GameManager {
   }
 
   useItem(playerId: number, useType: number, targetPlayerId?: number): boolean {
-    // Stub for item usage (cheating, violence, banking)
-    // Extend with actual business logic
-    return true;
-  }
-
-  buyItem(playerId: number, itemType: ItemType): boolean {
     const player = this.gameState.players.find(p => p.id === playerId);
     if (!player) return false;
 
-    // Define item costs
-    const itemCosts: { [key in ItemType]: number } = {
+    const privateState = this.playerPrivateState.get(playerId);
+    if (!privateState) return false;
+
+    // Only allow swaps before showdown phase
+    if (this.gameState.phase === HandPhase.Showdown) {
+      return false;
+    }
+
+    // Handle sleeve card swaps
+    if (useType === UseItemType.UseSleeveCardSwapHoleA || useType === UseItemType.UseSleeveCardSwapHoleB) {
+      // Validate player has unlock and sleeve card
+      if (!privateState.hasCardSleeveUnlock || !privateState.sleeveCard) {
+        return false;
+      }
+
+      // Can't swap if all-in
+      if (player.isAllIn) {
+        return false;
+      }
+
+      const holeCards = this.holeCards.get(playerId);
+      if (!holeCards) return false;
+
+      // Determine which hole card to swap
+      const swapIndex = useType === UseItemType.UseSleeveCardSwapHoleA ? 0 : 1;
+      const swappedCard = holeCards[swapIndex];
+
+      // Perform the swap
+      holeCards[swapIndex] = privateState.sleeveCard;
+      privateState.sleeveCard = swappedCard;
+
+      return true;
+    }
+
+    // Default: other item usages (banking, etc.)
+    return true;
+  }
+
+  buyItem(playerId: number, itemType: number): boolean {
+    const player = this.gameState.players.find(p => p.id === playerId);
+    if (!player) return false;
+
+    const privateState = this.playerPrivateState.get(playerId);
+    if (!privateState) return false;
+
+    // Handle CardSleeveUnlock
+    if (itemType === ShopItemType.CardSleeveUnlock) {
+      const cost = 200;
+      if (player.stack < cost) {
+        return false; // Not enough chips
+      }
+
+      if (privateState.hasCardSleeveUnlock) {
+        return false; // Already own this item
+      }
+
+      player.stack -= cost;
+      privateState.hasCardSleeveUnlock = true;
+      player.inventory.push(ShopItemType.CardSleeveUnlock);
+      return true;
+    }
+
+    // Handle ExtraCard - select random card and deduct dynamic cost
+    if (itemType === ShopItemType.ExtraCard) {
+      // Only allow one sleeve card at a time
+      if (privateState.sleeveCard !== null) {
+        return false;
+      }
+
+      const randomCard = this.getRandomAvailableCard();
+      if (!randomCard) {
+        return false; // No cards available (shouldn't happen)
+      }
+
+      const cost = getCardPrice(randomCard);
+      if (player.stack < cost) {
+        return false; // Not enough chips
+      }
+
+      player.stack -= cost;
+      privateState.sleeveCard = randomCard;
+      return true;
+    }
+
+    // Default existing items (Item1, Item2, Item3)
+    const itemCosts: { [key: number]: number } = {
       [ItemType.Item1]: 50,
       [ItemType.Item2]: 75,
       [ItemType.Item3]: 100,
     };
 
     const cost = itemCosts[itemType];
-    if (player.stack < cost) {
+    if (!cost || player.stack < cost) {
       return false; // Not enough chips
     }
 
-    // Deduct cost and add to inventory
     player.stack -= cost;
     player.inventory.push(itemType);
     return true;
@@ -357,7 +476,77 @@ export class GameManager {
     }
   }
 
+  getRandomAvailableCardFor(playerId: number): Card | null {
+    return this.getRandomAvailableCard();
+  }
+
+  buyExtraCard(playerId: number, card: Card): boolean {
+    const player = this.gameState.players.find(p => p.id === playerId);
+    if (!player) return false;
+
+    const privateState = this.playerPrivateState.get(playerId);
+    if (!privateState) return false;
+
+    // Only allow one sleeve card at a time
+    if (privateState.sleeveCard !== null) {
+      return false;
+    }
+
+    const cost = getCardPrice(card);
+    if (player.stack < cost) {
+      return false; // Not enough chips
+    }
+
+    player.stack -= cost;
+    privateState.sleeveCard = card;
+    return true;
+  }
+
+  getPlayerSleeveCard(playerId: number): Card | null {
+    const privateState = this.playerPrivateState.get(playerId);
+    return privateState?.sleeveCard || null;
+  }
+
+  hasCardSleeveUnlock(playerId: number): boolean {
+    const privateState = this.playerPrivateState.get(playerId);
+    return privateState?.hasCardSleeveUnlock || false;
+  }
+
   // Private helpers
+
+  private getRandomAvailableCard(): Card | null {
+    // Create a set of all consumed cards (dealt hole cards + board cards)
+    const consumedCards = new Set<string>();
+
+    // Add dealt hole cards
+    this.holeCards.forEach(([cardA, cardB]) => {
+      consumedCards.add(cardToString(cardA));
+      consumedCards.add(cardToString(cardB));
+    });
+
+    // Add board cards
+    for (const card of this.gameState.board) {
+      consumedCards.add(cardToString(card));
+    }
+
+    // Generate all 52 cards
+    const allCards: Card[] = [];
+    for (let suit = 0; suit < 4; suit++) {
+      for (let rank = 2; rank <= 14; rank++) {
+        allCards.push({ suit: suit as Suit, rank: rank as Rank });
+      }
+    }
+
+    // Filter out consumed cards
+    const availableCards = allCards.filter(card => !consumedCards.has(cardToString(card)));
+
+    if (availableCards.length === 0) {
+      return null;
+    }
+
+    // Return random available card
+    return availableCards[Math.floor(Math.random() * availableCards.length)];
+  }
 
   private shuffleDeck(): void {
     this.deck = [];

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
-import { PokerActionType, cardToString, Suit } from '@poker/shared';
+import { PokerActionType, cardToString, Suit, UseItemType } from '@poker/shared';
 
 const isRedCard = (suit: Suit): boolean => {
   return suit === Suit.Hearts || suit === Suit.Diamonds;
@@ -24,7 +24,7 @@ const formatLastAction = (lastAction?: { type: number; amount?: number }): strin
 };
 
 export const GameBoard: React.FC = () => {
-  const { gameState, playerId, holeCards, submitAction } = useGame();
+  const { gameState, playerId, holeCards, sleeveCard, useItem, submitAction } = useGame();
   const [raiseAmount, setRaiseAmount] = useState<string>('');
 
   if (!gameState || !playerId) {
@@ -33,12 +33,21 @@ export const GameBoard: React.FC = () => {
 
   const currentPlayer = gameState.players.find(p => p.id === playerId);
   const minRaise = gameState.currentBetToMatch + 10;
+  const canSwap = gameState.activePlayerId === playerId && !currentPlayer?.isAllIn && sleeveCard !== null;
+  const canCheck = currentPlayer ? gameState.currentBetToMatch === currentPlayer.committedThisRound : false;
 
   const handleRaise = () => {
     const amount = parseInt(raiseAmount, 10);
     if (!isNaN(amount) && amount >= minRaise && currentPlayer && amount <= currentPlayer.stack + (gameState.currentBetToMatch - currentPlayer.committedThisRound)) {
       submitAction({ type: PokerActionType.RaiseTo, raiseToAmount: amount });
       setRaiseAmount('');
+    }
+  };
+
+  const handleRaiseInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setRaiseAmount(minRaise.toString());
     }
   };
 
@@ -63,6 +72,36 @@ export const GameBoard: React.FC = () => {
         )}
       </div>
 
+      {sleeveCard && (
+        <div className="sleeve-card-section">
+          <h3>Card Sleeve</h3>
+          <div className="sleeve-card-display">
+            <div className={`card sleeve-card ${isRedCard(sleeveCard.suit) ? 'red-card' : ''}`}>
+              {cardToString(sleeveCard)}
+            </div>
+          </div>
+          {canSwap && holeCards && holeCards.length === 2 && (
+            <div className="swap-buttons">
+              <button 
+                className="swap-btn"
+                onClick={() => useItem(UseItemType.UseSleeveCardSwapHoleA)}
+              >
+                Swap with {cardToString(holeCards[0])}
+              </button>
+              <button 
+                className="swap-btn"
+                onClick={() => useItem(UseItemType.UseSleeveCardSwapHoleB)}
+              >
+                Swap with {cardToString(holeCards[1])}
+              </button>
+            </div>
+          )}
+          {!canSwap && sleeveCard && (
+            <p className="swap-disabled-msg">Swaps only allowed on your turn</p>
+          )}
+        </div>
+      )}
+
       <div className="board-cards">
         <h3>Community Cards</h3>
         <div className="cards">
@@ -79,7 +118,7 @@ export const GameBoard: React.FC = () => {
           <div key={player.id} className={`player-seat ${player.id === playerId ? 'is-you' : ''} ${player.id === gameState.activePlayerId ? 'active-player' : ''}`}>
             {player.id === gameState.activePlayerId && <div className="active-indicator">●</div>}
             <h4>{player.name}</h4>
-            <p>Stack: ${player.stack}</p>
+            {player.id === playerId && <p>Stack: ${player.stack}</p>}
             {player.lastAction && (
               <p className="last-action">{formatLastAction(player.lastAction)}</p>
             )}
@@ -96,7 +135,10 @@ export const GameBoard: React.FC = () => {
           <button onClick={() => submitAction({ type: PokerActionType.Fold })}>
             Fold
           </button>
-          <button onClick={() => submitAction({ type: PokerActionType.Check })}>
+          <button 
+            onClick={() => submitAction({ type: PokerActionType.Check })}
+            disabled={!canCheck}
+          >
             Check
           </button>
           <button onClick={() => submitAction({ type: PokerActionType.Call })}>
@@ -108,6 +150,7 @@ export const GameBoard: React.FC = () => {
               placeholder={`Raise to (min $${minRaise})...`}
               value={raiseAmount}
               onChange={e => setRaiseAmount(e.target.value)}
+              onKeyDown={handleRaiseInputKeyDown}
             />
             <button onClick={handleRaise}>
               Raise

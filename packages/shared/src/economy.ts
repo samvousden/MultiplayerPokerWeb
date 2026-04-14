@@ -1,3 +1,5 @@
+import { Card, Rank } from './card.js';
+
 export enum ShopItemType {
   None = 0,
   BankAccountUnlock = 1,
@@ -6,6 +8,8 @@ export enum ShopItemType {
   Cigarette = 12,
   Gun = 20,
   Bullet = 21,
+  CardSleeveUnlock = 30,
+  ExtraCard = 31,
 }
 
 export enum UseItemType {
@@ -16,6 +20,8 @@ export enum UseItemType {
   UseSleeveCardReplaceHoleA = 11,
   UseSleeveCardReplaceHoleB = 12,
   SmokeCigarette = 20,
+  UseSleeveCardSwapHoleA = 21,
+  UseSleeveCardSwapHoleB = 22,
   ShootPlayer = 30,
 }
 
@@ -24,7 +30,8 @@ export interface PlayerPrivateState {
   bankBalance: number;
   hasGun: boolean;
   bullets: number;
-  sleeveCards: number;
+  hasCardSleeveUnlock: boolean;
+  sleeveCard: Card | null;
   xrayCharges: number;
   luckLevel: number; // from cigarettes
 }
@@ -36,6 +43,8 @@ export const ShopCatalog = {
   Cigarette: 25,
   Gun: 400,
   Bullet: 30,
+  CardSleeveUnlock: 200,
+  ExtraCard: 0, // Dynamic pricing applied at purchase time based on card rank
 } as const;
 
 export function getPrice(item: ShopItemType): number {
@@ -47,8 +56,22 @@ export function getPrice(item: ShopItemType): number {
     [ShopItemType.Cigarette]: 25,
     [ShopItemType.Gun]: 400,
     [ShopItemType.Bullet]: 30,
+    [ShopItemType.CardSleeveUnlock]: 200,
+    [ShopItemType.ExtraCard]: 0, // Dynamic; use getCardPrice() instead
   };
   return prices[item];
+}
+
+export function getCardPrice(card: Card): number {
+  // Number cards (2-10): $30, Face cards (J/Q/K): $40, Ace: $50
+  if (card.rank >= Rank.Two && card.rank <= Rank.Ten) {
+    return 30;
+  } else if (card.rank >= Rank.Jack && card.rank <= Rank.King) {
+    return 40;
+  } else if (card.rank === Rank.Ace) {
+    return 50;
+  }
+  return 0; // Fallback
 }
 
 export function isStackable(item: ShopItemType): boolean {

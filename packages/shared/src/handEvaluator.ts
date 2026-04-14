@@ -1,4 +1,4 @@
-import { Card, Rank } from './card';
+import { Card, Rank } from './card.js';
 
 /**
  * Hand rankings (higher is better)

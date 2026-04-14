@@ -1,6 +1,7 @@
 {
   "name": "@poker/shared",
   "version": "1.0.0",
+  "type": "module",
   "description": "Shared types and poker logic",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

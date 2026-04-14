@@ -8,6 +8,7 @@ interface GameContextType {
   playerId: number | null;
   isConnected: boolean;
   holeCards: Card[] | null;
+  sleeveCard: Card | null;
   allPlayerCards: Map<number, Card[]> | null; // All players' hole cards for showdown
   winnerId: number | null; // Primary winner ID
   winnerIds: number[]; // All winners in case of tie
@@ -20,6 +21,7 @@ interface GameContextType {
   startHand: () => void;
   submitAction: (action: PokerAction) => Promise<boolean>;
   useItem: (itemType: number, targetPlayerId?: number) => void;
+  refreshSleeveCard: () => void;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -30,6 +32,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [playerId, setPlayerId] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [holeCards, setHoleCards] = useState<Card[] | null>(null);
+  const [sleeveCard, setSleeveCard] = useState<Card | null>(null);
   const [allPlayerCards, setAllPlayerCards] = useState<Map<number, Card[]> | null>(null);
   const [winnerId, setWinnerId] = useState<number | null>(null);
   const [winnerIds, setWinnerIds] = useState<number[]>([]);
@@ -93,6 +96,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ),
         };
       });
+    });
+
+    newSocket.on('sleeve-card-updated', (data: { sleeveCard: Card | null }) => {
+      setSleeveCard(data.sleeveCard);
     });
 
     setSocket(newSocket);
@@ -185,6 +192,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [socket, playerId]
   );
 
+  const refreshSleeveCard = useCallback(() => {
+    if (!socket || !playerId) return;
+    socket.emit('get-sleeve-card', playerId, (response: any) => {
+      if (response.success) {
+        setSleeveCard(response.sleeveCard);
+      }
+    });
+  }, [socket, playerId]);
+
+  // Refresh sleeve card when player joins or on game state updates
+  useEffect(() => {
+    if (socket && playerId) {
+      refreshSleeveCard();
+    }
+  }, [socket, playerId, gameState?.phase, refreshSleeveCard]);
+
   return (
     <GameContext.Provider
       value={{
@@ -193,6 +216,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         playerId,
         isConnected,
         holeCards,
+        sleeveCard,
         allPlayerCards,
         winnerId,
         winnerIds,
@@ -203,6 +227,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         startHand,
         submitAction,
         useItem,
+        refreshSleeveCard,
       }}
     >
       {children}
