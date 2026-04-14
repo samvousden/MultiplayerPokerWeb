@@ -47,6 +47,7 @@ export interface PlayerPrivateState {
   luckLevel: number; // from cigarettes
   hasRake: boolean;
   hiddenCameraCharges: number;
+  cheatedThisHand: boolean;
 }
 
 export enum ShopItemRarity {
@@ -120,9 +121,9 @@ export function getShopItemInfo(type: ShopItemType): { name: string; description
     [ShopItemType.SleeveCard]: { name: 'Sleeve Card', description: 'A card for your sleeve' },
     [ShopItemType.XrayCharge]: { name: 'X-Ray Charge', description: 'Peek at the next deck card' },
     [ShopItemType.Cigarette]: { name: 'Cigarette', description: 'Increases luck' },
-    [ShopItemType.Gun]: { name: 'Gun', description: 'A weapon' },
-    [ShopItemType.Bullet]: { name: 'Bullet', description: 'Ammo for the gun' },
-    [ShopItemType.CardSleeveUnlock]: { name: 'Card Sleeve Unlock', description: 'Hold a card in your sleeve to swap with a hole card before showdown' },
+    [ShopItemType.Gun]: { name: 'Gun', description: 'For use on dirty cheaters' },
+    [ShopItemType.Bullet]: { name: 'Bullet', description: 'You show those dirty cheaters who they\'re messing with' },
+    [ShopItemType.CardSleeveUnlock]: { name: 'Card Sleeve Unlock', description: 'A spot to hide a card in your sleeve' },
     [ShopItemType.ExtraCard]: { name: 'Extra Card', description: 'A random card from the deck to put in your sleeve' },
     [ShopItemType.SleeveExtender]: { name: 'Card Sleeve Extender', description: 'Expand your sleeve to hold a second card' },
     [ShopItemType.Joker]: { name: 'Joker', description: 'A wild card that becomes the best possible card at showdown' },
@@ -154,6 +155,12 @@ export function getEligibleShopItems(state: PlayerPrivateState): ShopItemType[] 
       items.push(ShopItemType.Joker);
     }
   }
+
+  // Gun (one-time purchase, rare)
+  if (!state.hasGun) items.push(ShopItemType.Gun);
+
+  // Bullets (requires gun, can always buy more)
+  if (state.hasGun) items.push(ShopItemType.Bullet);
 
   // Charge-based items (can rebuy when charges are 0)
   if (state.xrayCharges === 0) items.push(ShopItemType.XRayGoggles);

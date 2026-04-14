@@ -2,10 +2,14 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
 import { Card, cardToDisplayString, ShopItemType, ShopItemRarity, ShopSlotItem } from '@poker/shared';
 
+const REFRESH_SHOP_COST = 50;
+
 export const ItemShop: React.FC = () => {
   const { gameState, socket, playerId, setReady } = useGame();
   const [shopSlots, setShopSlots] = useState<ShopSlotItem[]>([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [boughtIndices, setBoughtIndices] = useState<Set<number>>(new Set());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   if (!gameState) {
     return <div>Loading...</div>;
@@ -18,6 +22,7 @@ export const ItemShop: React.FC = () => {
   useEffect(() => {
     if (!socket || !playerId) return;
     setIsLoadingSlots(true);
+    setBoughtIndices(new Set());
     socket.emit('get-shop-slots', playerId, (response: any) => {
       setIsLoadingSlots(false);
       if (response.success) {
@@ -30,24 +35,27 @@ export const ItemShop: React.FC = () => {
     setReady(true);
   };
 
-  const handleBuyItem = useCallback((slotType: ShopItemType, previewCard?: Card, slotIndex?: number) => {
+  const handleRefreshShop = useCallback(() => {
+    if (!socket || !playerId) return;
+    setIsRefreshing(true);
+    socket.emit('refresh-shop', playerId, (response: any) => {
+      setIsRefreshing(false);
+      if (response.success) {
+        setShopSlots(response.slots);
+        setBoughtIndices(new Set());
+      } else {
+        alert(response.error || 'Cannot refresh shop');
+      }
+    });
+  }, [socket, playerId]);
+
+  const handleBuyItem = useCallback((slotType: ShopItemType, slotIndex: number, previewCard?: Card) => {
     if (!socket || !playerId) return;
 
     if (slotType === ShopItemType.ExtraCard && previewCard) {
       socket.emit('buy-extra-card', playerId, previewCard, (response: any) => {
         if (response.success) {
-          // Remove only the specific slot that was bought (by index if provided, else by card match)
-          setShopSlots(prev => {
-            if (slotIndex !== undefined) {
-              return prev.filter((_, i) => i !== slotIndex);
-            }
-            const idx = prev.findIndex(s =>
-              s.type === ShopItemType.ExtraCard &&
-              s.previewCard?.rank === previewCard.rank &&
-              s.previewCard?.suit === previewCard.suit
-            );
-            return idx >= 0 ? prev.filter((_, i) => i !== idx) : prev;
-          });
+          setBoughtIndices(prev => new Set(prev).add(slotIndex));
         } else {
           alert(`Failed to purchase: ${response.error}`);
         }
@@ -55,14 +63,7 @@ export const ItemShop: React.FC = () => {
     } else {
       socket.emit('buy-item', playerId, slotType, (response: any) => {
         if (response.success) {
-          // Remove the bought slot, and regenerate slots for dependency items
-          setShopSlots(prev => prev.filter(s => s.type !== slotType));
-          // If bought Card Sleeve Unlock or Sleeve Extender, refresh slots to potentially unlock new items
-          if (slotType === ShopItemType.CardSleeveUnlock || slotType === ShopItemType.SleeveExtender) {
-            socket.emit('get-shop-slots', playerId, (resp: any) => {
-              if (resp.success) setShopSlots(resp.slots);
-            });
-          }
+          setBoughtIndices(prev => new Set(prev).add(slotIndex));
         } else {
           alert(`Failed to purchase: ${response.error}`);
         }
@@ -71,13 +72,14 @@ export const ItemShop: React.FC = () => {
   }, [socket, playerId]);
 
   const renderSlot = (slot: ShopSlotItem, index: number) => {
+    const bought = boughtIndices.has(index);
     const canAfford = (currentPlayer?.stack || 0) >= slot.price;
     const rarityLabel = slot.rarity === ShopItemRarity.Rare ? 'Rare'
       : slot.rarity === ShopItemRarity.Uncommon ? 'Uncommon'
       : 'Common';
 
     return (
-      <div key={index} className="item-slot">
+      <div key={index} className={`item-slot${bought ? ' item-slot-bought' : ''}`}>
         <div className="item-card">
           <div className="item-card-header">
             <h3>{slot.name}</h3>
@@ -86,7 +88,6 @@ export const ItemShop: React.FC = () => {
           <p className="item-description">{slot.description}</p>
 
           {slot.type === ShopItemType.ExtraCard ? (
-            // Extra Card - show directly, no preview mechanic
             slot.previewCard ? (
               <>
                 <div className="card-preview">
@@ -97,17 +98,16 @@ export const ItemShop: React.FC = () => {
                 </div>
                 <button
                   className="buy-btn"
-                  onClick={() => handleBuyItem(slot.type, slot.previewCard!, index)}
-                  disabled={!canAfford}
+                  onClick={() => handleBuyItem(slot.type, index, slot.previewCard!)}
+                  disabled={bought || !canAfford}
                 >
-                  {canAfford ? 'Buy This Card' : 'Insufficient Funds'}
+                  {bought ? 'Purchased' : canAfford ? 'Buy This Card' : 'Insufficient Funds'}
                 </button>
               </>
             ) : (
               <p className="item-price">$30-$50</p>
             )
           ) : slot.type === ShopItemType.Joker ? (
-            // Joker card
             <>
               <div className="card-preview joker-preview">
                 <div className="card-display joker-display">
@@ -117,22 +117,21 @@ export const ItemShop: React.FC = () => {
               </div>
               <button
                 className="buy-btn"
-                onClick={() => handleBuyItem(slot.type)}
-                disabled={!canAfford}
+                onClick={() => handleBuyItem(slot.type, index)}
+                disabled={bought || !canAfford}
               >
-                {canAfford ? 'Buy' : 'Insufficient Funds'}
+                {bought ? 'Purchased' : canAfford ? 'Buy' : 'Insufficient Funds'}
               </button>
             </>
           ) : (
-            // Standard item
             <>
               <p className="item-price">${slot.price}</p>
               <button
                 className="buy-btn"
-                onClick={() => handleBuyItem(slot.type)}
-                disabled={!canAfford}
+                onClick={() => handleBuyItem(slot.type, index)}
+                disabled={bought || !canAfford}
               >
-                {canAfford ? 'Buy' : 'Insufficient Funds'}
+                {bought ? 'Purchased' : canAfford ? 'Buy' : 'Insufficient Funds'}
               </button>
             </>
           )}
@@ -160,11 +159,21 @@ export const ItemShop: React.FC = () => {
         )}
       </div>
 
+      <div className="shop-refresh">
+        <button
+          className="refresh-shop-btn"
+          onClick={handleRefreshShop}
+          disabled={isRefreshing || (currentPlayer?.stack ?? 0) < REFRESH_SHOP_COST}
+        >
+          {isRefreshing ? 'Refreshing...' : `Refresh Shop ($${REFRESH_SHOP_COST})`}
+        </button>
+      </div>
+
       <div className="players-status">
         <h3>Players Ready:</h3>
         {gameState.players.map(p => (
           <div key={p.id} className="player-ready-status">
-            {p.name} {p.isReady && '✓'} - Stack: ${p.stack}
+            {p.name} {p.isReady && '✓'}
           </div>
         ))}
       </div>

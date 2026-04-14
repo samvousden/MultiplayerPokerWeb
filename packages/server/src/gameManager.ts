@@ -138,6 +138,7 @@ export class GameManager {
       hasFolded: false,
       isAllIn: false,
       isBot: false,
+      isEliminated: false,
       inventory: [],
     });
 
@@ -155,6 +156,7 @@ export class GameManager {
       luckLevel: 0,
       hasRake: false,
       hiddenCameraCharges: 0,
+      cheatedThisHand: false,
     });
 
     return playerId;
@@ -179,6 +181,7 @@ export class GameManager {
       hasFolded: false,
       isAllIn: false,
       isBot: false,
+      isEliminated: false,
       inventory: [],
     });
 
@@ -195,6 +198,7 @@ export class GameManager {
       luckLevel: 0,
       hasRake: false,
       hiddenCameraCharges: 0,
+      cheatedThisHand: false,
     });
 
     // Add 3 bots with auto-ready
@@ -212,6 +216,7 @@ export class GameManager {
         hasFolded: false,
         isAllIn: false,
         isBot: true,
+        isEliminated: false,
         inventory: [],
       });
 
@@ -228,6 +233,7 @@ export class GameManager {
         luckLevel: 0,
         hasRake: false,
         hiddenCameraCharges: 0,
+        cheatedThisHand: false,
       });
     }
 
@@ -256,6 +262,11 @@ export class GameManager {
       player.isInHand = false;
       player.isAllIn = false;
       player.lastAction = undefined; // Clear last action
+    }
+
+    // Reset cheat tracking for each player
+    for (const [_, ps] of this.playerPrivateState) {
+      ps.cheatedThisHand = false;
     }
 
     // Rotate dealer button
@@ -428,6 +439,7 @@ export class GameManager {
       privateState.sleeveCard = swappedCard;
 
       this.sleeveSwappedThisRound.add(playerId);
+      privateState.cheatedThisHand = true;
       return true;
     }
 
@@ -456,6 +468,7 @@ export class GameManager {
       privateState.sleeveCard2 = swappedCard;
 
       this.sleeveSwappedThisRound.add(playerId);
+      privateState.cheatedThisHand = true;
       return true;
     }
 
@@ -540,6 +553,27 @@ export class GameManager {
       player.stack -= cost;
       privateState.hiddenCameraCharges = 3;
       player.inventory.push(ShopItemType.HiddenCamera);
+      return true;
+    }
+
+    // Handle Gun
+    if (itemType === ShopItemType.Gun) {
+      if (privateState.hasGun) return false;
+      const cost = getPrice(ShopItemType.Gun);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.hasGun = true;
+      player.inventory.push(ShopItemType.Gun);
+      return true;
+    }
+
+    // Handle Bullet
+    if (itemType === ShopItemType.Bullet) {
+      if (!privateState.hasGun) return false;
+      const cost = getPrice(ShopItemType.Bullet);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.bullets++;
       return true;
     }
 
@@ -637,6 +671,45 @@ export class GameManager {
     return privateState?.hasCardSleeveUnlock || false;
   }
 
+  shootPlayer(shooterId: number, targetId: number): { success: boolean; backfired: boolean; error?: string } {
+    if (this.gameState.phase !== HandPhase.Showdown) {
+      return { success: false, backfired: false, error: 'Can only shoot during showdown' };
+    }
+
+    const shooter = this.gameState.players.find(p => p.id === shooterId);
+    const target = this.gameState.players.find(p => p.id === targetId);
+    if (!shooter || !target) return { success: false, backfired: false, error: 'Player not found' };
+    if (shooter.isEliminated) return { success: false, backfired: false, error: 'You are eliminated' };
+    if (target.isEliminated) return { success: false, backfired: false, error: 'Target is already eliminated' };
+    if (shooterId === targetId) return { success: false, backfired: false, error: 'Cannot shoot yourself' };
+
+    const shooterState = this.playerPrivateState.get(shooterId);
+    if (!shooterState || !shooterState.hasGun || shooterState.bullets <= 0) {
+      return { success: false, backfired: false, error: 'No gun or bullets' };
+    }
+
+    shooterState.bullets--;
+
+    const targetState = this.playerPrivateState.get(targetId);
+    const targetCheated = targetState?.cheatedThisHand || false;
+
+    if (targetCheated) {
+      // Target cheated — shooter takes all their money
+      const stolen = target.stack;
+      target.stack = 0;
+      target.isEliminated = true;
+      shooter.stack += stolen;
+      return { success: true, backfired: false };
+    } else {
+      // Target was innocent — backfire: shooter gives all money to target
+      const lost = shooter.stack;
+      shooter.stack = 0;
+      shooter.isEliminated = true;
+      target.stack += lost;
+      return { success: true, backfired: true };
+    }
+  }
+
   generateShopSlots(playerId: number): ShopSlotItem[] {
     const privateState = this.playerPrivateState.get(playerId);
     if (!privateState) return [];
@@ -652,6 +725,8 @@ export class GameManager {
       [ShopItemType.XRayGoggles]: 6,        // Common
       [ShopItemType.Rake]: 2,              // Uncommon
       [ShopItemType.HiddenCamera]: 6,       // Common
+      [ShopItemType.Gun]: 1,               // Rare
+      [ShopItemType.Bullet]: 6,            // Common
     };
 
     // Build weighted pool
@@ -668,8 +743,8 @@ export class GameManager {
     while (selected.length < 3 && pool.length > 0) {
       const idx = Math.floor(Math.random() * pool.length);
       const type = pool[idx];
-      if (type === ShopItemType.ExtraCard) {
-        // ExtraCard can appear in multiple slots
+      if (type === ShopItemType.ExtraCard || type === ShopItemType.Bullet) {
+        // ExtraCard and Bullet can appear in multiple slots
         selected.push(type);
         pool.splice(idx, 1); // Remove only this one ticket
       } else if (!usedTypes.has(type)) {
@@ -706,6 +781,10 @@ export class GameManager {
         slot.rarity = ShopItemRarity.Uncommon;
       } else if (type === ShopItemType.SleeveExtender) {
         slot.rarity = ShopItemRarity.Rare;
+      } else if (type === ShopItemType.Gun) {
+        slot.rarity = ShopItemRarity.Rare;
+      } else if (type === ShopItemType.Bullet) {
+        slot.rarity = ShopItemRarity.Common;
       }
 
       return slot;
@@ -744,6 +823,7 @@ export class GameManager {
 
     if (this.deck.length === 0) return null;
     privateState.xrayCharges--;
+    privateState.cheatedThisHand = true;
     return this.deck[this.deck.length - 1];
   }
 
@@ -763,6 +843,7 @@ export class GameManager {
     if (!targetCards) return null;
 
     privateState.hiddenCameraCharges--;
+    privateState.cheatedThisHand = true;
     // Return a random one of their two hole cards
     const idx = Math.floor(Math.random() * 2);
     return targetCards[idx];
@@ -852,7 +933,7 @@ export class GameManager {
   private dealHoleCards(): void {
     let deckIndex = 0;
     for (const player of this.gameState.players) {
-      if (player.isSeated && player.isReady) {
+      if (player.isSeated && player.isReady && !player.isEliminated) {
         const cardA = this.deck[deckIndex++];
         const cardB = this.deck[deckIndex++];
         this.holeCards.set(player.id, [cardA, cardB]);

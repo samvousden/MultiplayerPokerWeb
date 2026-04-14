@@ -181,16 +181,21 @@ export const GameBoard: React.FC = () => {
 
       <div className="players-table">
         {gameState.players.map(player => (
-          <div key={player.id} className={`player-seat ${player.id === playerId ? 'is-you' : ''} ${player.id === gameState.activePlayerId ? 'active-player' : ''}`}>
+          <div key={player.id} className={`player-seat ${player.id === playerId ? 'is-you' : ''} ${player.id === gameState.activePlayerId ? 'active-player' : ''} ${player.isEliminated ? 'eliminated' : ''}`}>
             {player.id === gameState.activePlayerId && <div className="active-indicator">●</div>}
             <h4>{player.name}</h4>
-            {player.id === playerId && <p>Stack: ${player.stack}</p>}
-            {player.lastAction && (
+            {player.isEliminated ? (
+              <p className="stack-eliminated">Eliminated</p>
+            ) : (
+              <p>Stack: ${player.stack}</p>
+            )}
+            {player.lastAction && !player.isEliminated && (
               <p className="last-action">{formatLastAction(player.lastAction)}</p>
             )}
             {player.isReady && <span className="badge ready">Ready</span>}
             {player.hasFolded && <span className="badge folded">Folded</span>}
             {player.isAllIn && <span className="badge all-in">All In</span>}
+            {player.isEliminated && <span className="badge eliminated-badge">☠️ Out</span>}
           </div>
         ))}
       </div>

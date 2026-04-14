@@ -7,7 +7,7 @@ const isRedCard = (suit: Suit): boolean => {
 };
 
 export const ShowdownScreen: React.FC = () => {
-  const { gameState, allPlayerCards, winnerId, winnerIds, foldedOut, setReady } = useGame();
+  const { gameState, playerId, allPlayerCards, winnerId, winnerIds, foldedOut, setReady, hasGun, bullets, shootPlayer, shotFiredEvent } = useGame();
 
   if (!gameState) {
     return <div>Loading...</div>;
@@ -15,8 +15,11 @@ export const ShowdownScreen: React.FC = () => {
 
   const winner = gameState.players.find(p => p.id === winnerId);
   const isTie = winnerIds.length > 1;
-  const playerReady = gameState.players.find(p => p.isReady);
-  const allReady = gameState.players.length >= 2 && gameState.players.every(p => p.isReady);
+  const currentPlayer = gameState.players.find(p => p.id === playerId);
+  const isReady = currentPlayer?.isReady ?? false;
+  const nonEliminated = gameState.players.filter(p => !p.isEliminated);
+  const readyCount = nonEliminated.filter(p => p.isReady).length;
+  const allReady = nonEliminated.length >= 1 && nonEliminated.every(p => p.isReady);
 
   const winningHand = useMemo(() => {
     if (!winner || !allPlayerCards?.get(winner.id) || foldedOut) return null;
@@ -91,13 +94,37 @@ export const ShowdownScreen: React.FC = () => {
         </>
       )}
 
+      {shotFiredEvent && (
+        <div className={`shot-result ${shotFiredEvent.backfired ? 'backfired' : 'hit'}`}>
+          {shotFiredEvent.backfired
+            ? `💥 ${gameState.players.find(p => p.id === shotFiredEvent.shooterId)?.name} accused ${gameState.players.find(p => p.id === shotFiredEvent.targetId)?.name} of cheating — but they were INNOCENT! Backfire!`
+            : `🔫 ${gameState.players.find(p => p.id === shotFiredEvent.shooterId)?.name} caught ${gameState.players.find(p => p.id === shotFiredEvent.targetId)?.name} CHEATING! All their money is seized!`}
+        </div>
+      )}
+
+      {hasGun && bullets > 0 && !currentPlayer?.isEliminated && (
+        <div className="gun-section">
+          <h3>🔫 Accuse a Player of Cheating ({bullets} bullet{bullets !== 1 ? 's' : ''})</h3>
+          <p className="gun-warning">⚠️ If they cheated, you take all their money. If they're innocent, they take all of yours!</p>
+          <div className="gun-targets">
+            {gameState.players
+              .filter(p => p.id !== playerId && !p.isEliminated)
+              .map(p => (
+                <button key={p.id} className="shoot-btn" onClick={() => shootPlayer(p.id)}>
+                  🎯 Accuse {p.name}
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
+
       <div className="pot-final">
         <p className="final-pot">Final Pot: ${gameState.pot}</p>
         <div className="ready-section">
-          {!allReady ? (
-            <button onClick={() => setReady(true)} className="return-btn">Take Me to The Item Shop</button>
+          {!isReady ? (
+            <button onClick={() => setReady(true)} className="return-btn">Ready for Item Shop</button>
           ) : (
-            <p className="waiting-message">All players ready - starting next hand...</p>
+            <p className="waiting-message">Waiting for players... ({readyCount}/{nonEliminated.length} ready)</p>
           )}
         </div>
       </div>

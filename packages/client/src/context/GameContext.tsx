@@ -18,6 +18,9 @@ interface GameContextType {
   hiddenCameraCharges: number;
   revealedCards: Map<number, Card>; // targetPlayerId -> revealed card
   peekedCard: Card | null; // x-ray peeked card
+  hasGun: boolean;
+  bullets: number;
+  shotFiredEvent: { shooterId: number; targetId: number; backfired: boolean } | null;
   
   // Actions
   joinTable: (playerName: string) => Promise<number | false>;
@@ -29,6 +32,7 @@ interface GameContextType {
   refreshSleeveCard: () => void;
   useXRay: () => void;
   useHiddenCamera: (targetPlayerId: number) => void;
+  shootPlayer: (targetPlayerId: number) => void;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -49,6 +53,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [hiddenCameraCharges, setHiddenCameraCharges] = useState(0);
   const [revealedCards, setRevealedCards] = useState<Map<number, Card>>(new Map());
   const [peekedCard, setPeekedCard] = useState<Card | null>(null);
+  const [hasGun, setHasGun] = useState(false);
+  const [bullets, setBullets] = useState(0);
+  const [shotFiredEvent, setShotFiredEvent] = useState<{ shooterId: number; targetId: number; backfired: boolean } | null>(null);
 
   const serverUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
@@ -83,6 +90,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setHoleCards(null); // Clear old hole cards
       setRevealedCards(new Map());
       setPeekedCard(null);
+      setShotFiredEvent(null);
     });
 
     newSocket.on('hole-cards', (cards: Card[]) => {
@@ -115,6 +123,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     newSocket.on('sleeve-card-updated', (data: { sleeveCard: Card | null; sleeveCard2?: Card | null }) => {
       setSleeveCard(data.sleeveCard);
       setSleeveCard2(data.sleeveCard2 ?? null);
+    });
+
+    newSocket.on('shot-fired', (data: { shooterId: number; targetId: number; backfired: boolean }) => {
+      setShotFiredEvent(data);
     });
 
     setSocket(newSocket);
@@ -231,6 +243,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, [socket, playerId]);
 
+  const shootPlayer = useCallback((targetPlayerId: number) => {
+    if (!socket || !playerId) return;
+    socket.emit('shoot-player', playerId, targetPlayerId, (response: any) => {
+      if (response.success) {
+        setBullets(response.bulletsLeft);
+      }
+    });
+  }, [socket, playerId]);
+
   const refreshSleeveCard = useCallback(() => {
     if (!socket || !playerId) return;
     socket.emit('get-sleeve-card', playerId, (response: any) => {
@@ -239,6 +260,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSleeveCard2(response.sleeveCard2 ?? null);
         if (response.xrayCharges !== undefined) setXrayCharges(response.xrayCharges);
         if (response.hiddenCameraCharges !== undefined) setHiddenCameraCharges(response.hiddenCameraCharges);
+        if (response.hasGun !== undefined) setHasGun(response.hasGun);
+        if (response.bullets !== undefined) setBullets(response.bullets);
       }
     });
   }, [socket, playerId]);
@@ -268,6 +291,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         hiddenCameraCharges,
         revealedCards,
         peekedCard,
+        hasGun,
+        bullets,
+        shotFiredEvent,
         joinTable,
         playVsBots,
         setReady,
@@ -277,6 +303,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         refreshSleeveCard,
         useXRay,
         useHiddenCamera,
+        shootPlayer,
       }}
     >
       {children}

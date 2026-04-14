@@ -51,6 +51,7 @@ export interface PlayerPublicState {
   hasFolded: boolean;
   isAllIn: boolean;
   isBot: boolean;
+  isEliminated: boolean;
   inventory: number[]; // Items owned by player (ItemType or ShopItemType)
   lastAction?: {
     type: PokerActionType;

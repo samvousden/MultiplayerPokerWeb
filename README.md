@@ -1,6 +1,6 @@
 # MultiplayerPokerWeb
 
-A full-stack Texas Hold'em poker game built with:
+A poker game where players can buy cheats and advantages at the black market:
 - **Frontend**: React + TypeScript (AWS Amplify ready)
 - **Backend**: Node.js + Express + Socket.io
 - **Deployment**: AWS Amplify (frontend + backend via Lambda)
@@ -13,6 +13,8 @@ packages/
   ├── server/      # Express server with WebSocket (Socket.io)
   └── client/      # React app with Amplify config
 ```
+![bottom text](./screenshots/gameplay_screen.png)
+
 
 ## Quick Start
 

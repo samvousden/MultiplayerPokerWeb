@@ -989,3 +989,86 @@
   color: #999;
   font-size: 1.2em;
 }
+
+/* Eliminated player styles */
+.player-seat.eliminated {
+  opacity: 0.5;
+  border-color: #ff4444 !important;
+  background: rgba(255, 0, 0, 0.15) !important;
+}
+
+.stack-eliminated {
+  color: #ff4444;
+  font-weight: bold;
+}
+
+.eliminated-badge {
+  background: #ff4444 !important;
+  color: white;
+}
+
+/* Gun / Showdown accusation styles */
+.gun-section {
+  background: rgba(255, 0, 0, 0.1);
+  border: 2px solid #ff6600;
+  border-radius: 8px;
+  padding: 15px;
+  margin: 15px 0;
+  text-align: center;
+}
+
+.gun-section h3 {
+  color: #ff6600;
+  margin-bottom: 8px;
+}
+
+.gun-warning {
+  color: #ffaa00;
+  font-size: 0.9em;
+  margin-bottom: 12px;
+}
+
+.gun-targets {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.shoot-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #cc0000, #990000);
+  color: white;
+  border: 2px solid #ff4444;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 1em;
+  transition: all 0.2s;
+}
+
+.shoot-btn:hover {
+  background: linear-gradient(135deg, #ff0000, #cc0000);
+  transform: scale(1.05);
+}
+
+.shot-result {
+  padding: 15px;
+  border-radius: 8px;
+  margin: 10px 0;
+  font-size: 1.1em;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shot-result.hit {
+  background: rgba(0, 200, 0, 0.2);
+  border: 2px solid #00cc00;
+  color: #00ff00;
+}
+
+.shot-result.backfired {
+  background: rgba(255, 0, 0, 0.2);
+  border: 2px solid #ff0000;
+  color: #ff4444;
+}

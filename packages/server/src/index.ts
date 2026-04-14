@@ -162,16 +162,33 @@ io.on('connection', (socket) => {
   socket.on('set-ready', (playerId: number, isReady: boolean) => {
     const currentState = gameManager.getGameState();
     
-    // Handle Showdown phase: transition to ItemShop when human clicks ready
+    // Handle Showdown phase: wait for all players to ready up, then transition to ItemShop
     if (currentState.phase === 3) { // HandPhase.Showdown
-      // Reset all ready states when transitioning to ItemShop
-      for (const player of currentState.players) {
-        player.isReady = false;
+      gameManager.setReady(playerId, isReady);
+      io.emit('player-ready', { playerId, isReady });
+      
+      // In bot mode, auto-ready bots when human clicks ready
+      const hasBots = currentState.players.some(p => p.isBot);
+      if (hasBots && isReady) {
+        for (const player of currentState.players) {
+          if (player.isBot && !player.isEliminated) {
+            player.isReady = true;
+          }
+        }
+        io.emit('game-state-updated', currentState);
       }
       
-      // Transition to ItemShop phase
-      currentState.phase = 4; // HandPhase.ItemShop
-      io.emit('game-state-updated', currentState);
+      // Only transition when ALL non-eliminated players are ready
+      const activePlayers = currentState.players.filter(p => !p.isEliminated);
+      const allShowdownReady = activePlayers.length >= 1 && activePlayers.every(p => p.isReady);
+      if (allShowdownReady) {
+        // Reset ready states and transition to ItemShop
+        for (const player of currentState.players) {
+          player.isReady = false;
+        }
+        currentState.phase = 4; // HandPhase.ItemShop
+        io.emit('game-state-updated', currentState);
+      }
     } 
     // Handle ItemShop phase: transition to Lobby when ready
     else if (currentState.phase === 4) { // HandPhase.ItemShop
@@ -189,9 +206,10 @@ io.on('connection', (socket) => {
         }
       }
       
-      // Check if all ready to start next hand directly (skip Lobby)
-      const allReady = currentState.players.length >= 2 && 
-        currentState.players.every(p => p.isReady);
+      // Check if all non-eliminated players ready to start next hand directly (skip Lobby)
+      const nonEliminated = currentState.players.filter(p => !p.isEliminated);
+      const allReady = nonEliminated.length >= 2 && 
+        nonEliminated.every(p => p.isReady);
       if (allReady) {
         // Skip Lobby and go directly to next hand
         gameManager.startHand();
@@ -314,10 +332,23 @@ io.on('connection', (socket) => {
       hasUnlock,
       xrayCharges: ps?.xrayCharges ?? 0,
       hiddenCameraCharges: ps?.hiddenCameraCharges ?? 0,
+      hasGun: ps?.hasGun ?? false,
+      bullets: ps?.bullets ?? 0,
     });
   });
 
   socket.on('get-shop-slots', (playerId: number, callback) => {
+    const slots = gameManager.generateShopSlots(playerId);
+    callback({ success: true, slots });
+  });
+
+  socket.on('refresh-shop', (playerId: number, callback) => {
+    const player = gameManager.getGameState().players.find(p => p.id === playerId);
+    if (!player) { callback({ success: false, error: 'Player not found' }); return; }
+    const cost = 50;
+    if (player.stack < cost) { callback({ success: false, error: 'Not enough chips' }); return; }
+    player.stack -= cost;
+    io.emit('game-state-updated', gameManager.getGameState());
     const slots = gameManager.generateShopSlots(playerId);
     callback({ success: true, slots });
   });
@@ -402,6 +433,18 @@ io.on('connection', (socket) => {
       callback({ success: true });
     } else {
       callback({ success: false, error: 'Unable to purchase item' });
+    }
+  });
+
+  socket.on('shoot-player', (playerId: number, targetId: number, callback) => {
+    const result = gameManager.shootPlayer(playerId, targetId);
+    if (result.success) {
+      io.emit('game-state-updated', gameManager.getGameState());
+      io.emit('shot-fired', { shooterId: playerId, targetId, backfired: result.backfired });
+      const ps = gameManager.getPlayerPrivateState(playerId);
+      callback({ success: true, backfired: result.backfired, bulletsLeft: ps?.bullets ?? 0 });
+    } else {
+      callback({ success: false, error: result.error });
     }
   });
 
