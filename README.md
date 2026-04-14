@@ -13,8 +13,23 @@ packages/
   ├── server/      # Express server with WebSocket (Socket.io)
   └── client/      # React app with Amplify config
 ```
+
+## Gameplay
+
 ![bottom text](./screenshots/gameplay_screen.png)
 
+Plays like regular poker. In between rounds, players can visit the item shop to purchase items to adjust their odds!
+![bottom text](./screenshots/shop.png)
+
+Purchased items will show up in in the player's game screen and have different effects.
+![bottom text](./screenshots/gameplay_sleeve.png)
+![bottom text](./screenshots/more_items.png)
+
+Some items are used after the showdown. Catch a player cheating to win their stack!
+![bottom text](./screenshots/win_screen_gun.png)
+
+Running out of money means you're eliminated
+![bottom text](./screenshots/eliminated.png)
 
 ## Quick Start
 
