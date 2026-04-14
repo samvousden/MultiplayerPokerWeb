@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
-import { PokerActionType, cardToString, Suit, UseItemType } from '@poker/shared';
+import { PokerActionType, cardToString, cardToDisplayString, Suit, UseItemType, isJokerCard } from '@poker/shared';
 
 const isRedCard = (suit: Suit): boolean => {
   return suit === Suit.Hearts || suit === Suit.Diamonds;
@@ -24,7 +24,7 @@ const formatLastAction = (lastAction?: { type: number; amount?: number }): strin
 };
 
 export const GameBoard: React.FC = () => {
-  const { gameState, playerId, holeCards, sleeveCard, useItem, submitAction } = useGame();
+  const { gameState, playerId, holeCards, sleeveCard, useItem, submitAction, xrayCharges, hiddenCameraCharges, revealedCards, peekedCard, useXRay, useHiddenCamera } = useGame();
   const [raiseAmount, setRaiseAmount] = useState<string>('');
 
   if (!gameState || !playerId) {
@@ -62,8 +62,8 @@ export const GameBoard: React.FC = () => {
         {holeCards && holeCards.length > 0 ? (
           <div className="hole-cards">
             {holeCards.map((card, i) => (
-              <div key={i} className={`card hole-card ${isRedCard(card.suit) ? 'red-card' : ''}`}>
-                {cardToString(card)}
+              <div key={i} className={`card hole-card ${isJokerCard(card) ? 'joker-card' : isRedCard(card.suit) ? 'red-card' : ''}`}>
+                {cardToDisplayString(card)}
               </div>
             ))}
           </div>
@@ -76,8 +76,8 @@ export const GameBoard: React.FC = () => {
         <div className="sleeve-card-section">
           <h3>Card Sleeve</h3>
           <div className="sleeve-card-display">
-            <div className={`card sleeve-card ${isRedCard(sleeveCard.suit) ? 'red-card' : ''}`}>
-              {cardToString(sleeveCard)}
+            <div className={`card sleeve-card ${isJokerCard(sleeveCard) ? 'joker-card' : isRedCard(sleeveCard.suit) ? 'red-card' : ''}`}>
+              {cardToDisplayString(sleeveCard)}
             </div>
           </div>
           {canSwap && holeCards && holeCards.length === 2 && (
@@ -86,18 +86,54 @@ export const GameBoard: React.FC = () => {
                 className="swap-btn"
                 onClick={() => useItem(UseItemType.UseSleeveCardSwapHoleA)}
               >
-                Swap with {cardToString(holeCards[0])}
+                Swap with {cardToDisplayString(holeCards[0])}
               </button>
               <button 
                 className="swap-btn"
                 onClick={() => useItem(UseItemType.UseSleeveCardSwapHoleB)}
               >
-                Swap with {cardToString(holeCards[1])}
+                Swap with {cardToDisplayString(holeCards[1])}
               </button>
             </div>
           )}
           {!canSwap && sleeveCard && (
             <p className="swap-disabled-msg">Swaps only allowed on your turn</p>
+          )}
+        </div>
+      )}
+
+      {(xrayCharges > 0 || peekedCard !== null || hiddenCameraCharges > 0 || revealedCards.size > 0) && (
+        <div className="items-section">
+          {(xrayCharges > 0 || peekedCard !== null) && (
+            <div className="item-action">
+              <button className="item-use-btn xray-btn" onClick={useXRay} disabled={xrayCharges <= 0}>
+                🔍 X-Ray ({xrayCharges})
+              </button>
+              {peekedCard && (
+                <span className="peeked-card">
+                  Next card: <span className={`card-inline ${isRedCard(peekedCard.suit) ? 'red-card-text' : ''}`}>{cardToString(peekedCard)}</span>
+                </span>
+              )}
+            </div>
+          )}
+          {(hiddenCameraCharges > 0 || revealedCards.size > 0) && (
+            <div className="item-action">
+              <span className="camera-label">📷 Camera ({hiddenCameraCharges}):</span>
+              {gameState.players
+                .filter(p => p.id !== playerId && p.isInHand && !p.hasFolded)
+                .map(p => (
+                  <button
+                    key={p.id}
+                    className="item-use-btn camera-btn"
+                    onClick={() => useHiddenCamera(p.id)}
+                    disabled={hiddenCameraCharges <= 0 || revealedCards.has(p.id)}
+                  >
+                    {revealedCards.has(p.id)
+                      ? `${p.name}: ${cardToString(revealedCards.get(p.id)!)}`
+                      : p.name}
+                  </button>
+                ))}
+            </div>
           )}
         </div>
       )}

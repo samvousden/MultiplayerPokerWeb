@@ -566,7 +566,7 @@
 
 .items-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   margin-bottom: 40px;
 }
@@ -593,6 +593,45 @@
   margin: 0 0 15px 0;
   font-size: 1.3em;
   text-align: center;
+}
+
+.item-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 15px;
+}
+
+.item-card-header h3 {
+  margin: 0;
+  text-align: left;
+}
+
+.rarity-badge {
+  font-size: 0.7em;
+  font-weight: bold;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.rarity-common {
+  background: rgba(150, 150, 150, 0.25);
+  color: #bbb;
+  border: 1px solid #777;
+}
+
+.rarity-uncommon {
+  background: rgba(30, 180, 130, 0.2);
+  color: #2ecc71;
+  border: 1px solid #2ecc71;
+}
+
+.rarity-rare {
+  background: rgba(160, 60, 220, 0.2);
+  color: #c77dff;
+  border: 1px solid #c77dff;
 }
 
 .item-description {
@@ -840,4 +879,113 @@
   text-align: center;
   margin: 0;
   animation: pulse 1s infinite;
+}
+
+/* Joker Card */
+.joker-card {
+  background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 50%, #6c3483 100%) !important;
+  color: #fff !important;
+  border-color: #ffd700 !important;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+}
+
+.joker-preview {
+  border-color: #9b59b6 !important;
+  background: rgba(155, 89, 182, 0.15) !important;
+}
+
+.joker-display {
+  background: linear-gradient(135deg, #9b59b6 0%, #6c3483 100%) !important;
+}
+
+.joker-display .card-name {
+  color: #fff !important;
+  font-size: 2.5em !important;
+}
+
+/* Items Section (X-Ray / Camera) */
+.items-section {
+  background: rgba(0, 100, 200, 0.15);
+  border-radius: 6px;
+  padding: 15px 20px;
+  margin-bottom: 30px;
+  border: 2px solid #2196F3;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.item-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.item-use-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.9em;
+}
+
+.item-use-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.xray-btn {
+  background: #2196F3;
+  color: white;
+}
+
+.xray-btn:hover {
+  background: #0b7dda;
+  transform: scale(1.05);
+}
+
+.camera-btn {
+  background: #ff9800;
+  color: white;
+}
+
+.camera-btn:hover:not(:disabled) {
+  background: #e68900;
+  transform: scale(1.05);
+}
+
+.camera-btn:disabled {
+  background: #4CAF50;
+}
+
+.camera-label {
+  font-weight: bold;
+  color: #ff9800;
+}
+
+.peeked-card {
+  color: #90ee90;
+  font-weight: bold;
+  margin-left: 5px;
+}
+
+.card-inline {
+  font-weight: bold;
+}
+
+.red-card-text {
+  color: #ff6b6b;
+}
+
+/* Shop loading/empty states */
+.shop-loading,
+.shop-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px;
+  color: #999;
+  font-size: 1.2em;
 }

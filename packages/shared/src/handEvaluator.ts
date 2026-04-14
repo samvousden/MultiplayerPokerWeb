@@ -1,4 +1,4 @@
-import { Card, Rank } from './card.js';
+import { Card, Rank, Suit, isJokerCard } from './card.js';
 
 /**
  * Hand rankings (higher is better)
@@ -351,4 +351,115 @@ function calculateTiebreaker(ranking: HandRanking, ranks: number[]): number {
     score += ranks[i] << (20 - i * 4);
   }
   return score;
+}
+
+/**
+ * Evaluates best hand replacing any joker cards with the optimal card.
+ * Tries all 52 possible substitutions for each joker in hole cards only.
+ */
+export function evaluateBestHandWithJokers(holeCards: Card[], boardCards: Card[]): HandValue {
+  const jokerIndices = holeCards
+    .map((c, i) => isJokerCard(c) ? i : -1)
+    .filter(i => i >= 0);
+
+  if (jokerIndices.length === 0) {
+    return evaluateBestHand(holeCards, boardCards);
+  }
+
+  // Build set of cards already in play (non-joker hole cards + board)
+  const usedKeys = new Set<string>();
+  for (const c of holeCards) {
+    if (!isJokerCard(c)) usedKeys.add(`${c.suit}-${c.rank}`);
+  }
+  for (const c of boardCards) {
+    usedKeys.add(`${c.suit}-${c.rank}`);
+  }
+
+  // Generate all candidate cards
+  const candidates: Card[] = [];
+  for (let suit = 0; suit < 4; suit++) {
+    for (let rank = 2; rank <= 14; rank++) {
+      if (!usedKeys.has(`${suit}-${rank}`)) {
+        candidates.push({ suit: suit as Suit, rank: rank as Rank });
+      }
+    }
+  }
+
+  let bestValue: HandValue | null = null;
+
+  if (jokerIndices.length === 1) {
+    for (const card of candidates) {
+      const testHole: Card[] = [...holeCards];
+      testHole[jokerIndices[0]] = card;
+      const value = evaluateBestHand(testHole, boardCards);
+      if (!bestValue || value.score > bestValue.score) {
+        bestValue = value;
+      }
+    }
+  } else {
+    // Two jokers (unlikely but handle)
+    for (const c1 of candidates) {
+      for (const c2 of candidates) {
+        if (c1.suit === c2.suit && c1.rank === c2.rank) continue;
+        const testHole: Card[] = [...holeCards];
+        testHole[jokerIndices[0]] = c1;
+        testHole[jokerIndices[1]] = c2;
+        const value = evaluateBestHand(testHole, boardCards);
+        if (!bestValue || value.score > bestValue.score) {
+          bestValue = value;
+        }
+      }
+    }
+  }
+
+  return bestValue || evaluateBestHand(holeCards, boardCards);
+}
+
+/**
+ * Returns hole cards with each joker replaced by its optimal card.
+ * Requires a complete 5-card board.
+ */
+export function resolveJokersForShowdown(holeCards: Card[], boardCards: Card[]): Card[] {
+  const result = [...holeCards];
+
+  const usedKeys = new Set<string>();
+  for (const c of holeCards) {
+    if (!isJokerCard(c)) usedKeys.add(`${c.suit}-${c.rank}`);
+  }
+  for (const c of boardCards) {
+    usedKeys.add(`${c.suit}-${c.rank}`);
+  }
+
+  const candidates: Card[] = [];
+  for (let suit = 0; suit < 4; suit++) {
+    for (let rank = 2; rank <= 14; rank++) {
+      if (!usedKeys.has(`${suit}-${rank}`)) {
+        candidates.push({ suit: suit as Suit, rank: rank as Rank });
+      }
+    }
+  }
+
+  for (let jokerIdx = 0; jokerIdx < result.length; jokerIdx++) {
+    if (!isJokerCard(result[jokerIdx])) continue;
+
+    let bestScore = -1;
+    let bestCard: Card = candidates[0];
+
+    for (const card of candidates) {
+      const testHole = [...result];
+      testHole[jokerIdx] = card;
+      const value = evaluateBestHand(testHole, boardCards);
+      if (value.score > bestScore) {
+        bestScore = value.score;
+        bestCard = card;
+      }
+    }
+
+    result[jokerIdx] = bestCard;
+    // Remove chosen card from candidates for subsequent jokers
+    const idx = candidates.findIndex(c => c.suit === bestCard.suit && c.rank === bestCard.rank);
+    if (idx >= 0) candidates.splice(idx, 1);
+  }
+
+  return result;
 }

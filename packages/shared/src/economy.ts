@@ -1,4 +1,4 @@
-import { Card, Rank } from './card.js';
+import { Card, Rank, Suit, isJokerCard } from './card.js';
 
 export enum ShopItemType {
   None = 0,
@@ -10,6 +10,10 @@ export enum ShopItemType {
   Bullet = 21,
   CardSleeveUnlock = 30,
   ExtraCard = 31,
+  Joker = 32,
+  XRayGoggles = 40,
+  Rake = 41,
+  HiddenCamera = 42,
 }
 
 export enum UseItemType {
@@ -23,6 +27,8 @@ export enum UseItemType {
   UseSleeveCardSwapHoleA = 21,
   UseSleeveCardSwapHoleB = 22,
   ShootPlayer = 30,
+  UseXRayGoggles = 40,
+  UseHiddenCamera = 41,
 }
 
 export interface PlayerPrivateState {
@@ -34,6 +40,23 @@ export interface PlayerPrivateState {
   sleeveCard: Card | null;
   xrayCharges: number;
   luckLevel: number; // from cigarettes
+  hasRake: boolean;
+  hiddenCameraCharges: number;
+}
+
+export enum ShopItemRarity {
+  Common = 'common',
+  Uncommon = 'uncommon',
+  Rare = 'rare',
+}
+
+export interface ShopSlotItem {
+  type: ShopItemType;
+  price: number;
+  name: string;
+  description: string;
+  rarity: ShopItemRarity;
+  previewCard?: Card; // For ExtraCard only
 }
 
 export const ShopCatalog = {
@@ -45,6 +68,10 @@ export const ShopCatalog = {
   Bullet: 30,
   CardSleeveUnlock: 200,
   ExtraCard: 0, // Dynamic pricing applied at purchase time based on card rank
+  Joker: 100,
+  XRayGoggles: 150,
+  Rake: 300,
+  HiddenCamera: 150,
 } as const;
 
 export function getPrice(item: ShopItemType): number {
@@ -58,11 +85,16 @@ export function getPrice(item: ShopItemType): number {
     [ShopItemType.Bullet]: 30,
     [ShopItemType.CardSleeveUnlock]: 200,
     [ShopItemType.ExtraCard]: 0, // Dynamic; use getCardPrice() instead
+    [ShopItemType.Joker]: 100,
+    [ShopItemType.XRayGoggles]: 150,
+    [ShopItemType.Rake]: 300,
+    [ShopItemType.HiddenCamera]: 150,
   };
   return prices[item];
 }
 
 export function getCardPrice(card: Card): number {
+  if (isJokerCard(card)) return 100;
   // Number cards (2-10): $30, Face cards (J/Q/K): $40, Ace: $50
   if (card.rank >= Rank.Two && card.rank <= Rank.Ten) {
     return 30;
@@ -72,6 +104,45 @@ export function getCardPrice(card: Card): number {
     return 50;
   }
   return 0; // Fallback
+}
+
+export function getShopItemInfo(type: ShopItemType): { name: string; description: string } {
+  const info: Record<ShopItemType, { name: string; description: string }> = {
+    [ShopItemType.None]: { name: '', description: '' },
+    [ShopItemType.BankAccountUnlock]: { name: 'Bank Account', description: 'Unlock a bank account' },
+    [ShopItemType.SleeveCard]: { name: 'Sleeve Card', description: 'A card for your sleeve' },
+    [ShopItemType.XrayCharge]: { name: 'X-Ray Charge', description: 'Peek at the next deck card' },
+    [ShopItemType.Cigarette]: { name: 'Cigarette', description: 'Increases luck' },
+    [ShopItemType.Gun]: { name: 'Gun', description: 'A weapon' },
+    [ShopItemType.Bullet]: { name: 'Bullet', description: 'Ammo for the gun' },
+    [ShopItemType.CardSleeveUnlock]: { name: 'Card Sleeve Unlock', description: 'Hold a card in your sleeve to swap with a hole card before showdown' },
+    [ShopItemType.ExtraCard]: { name: 'Extra Card', description: 'A random card from the deck to put in your sleeve' },
+    [ShopItemType.Joker]: { name: 'Joker', description: 'A wild card that becomes the best possible card at showdown' },
+    [ShopItemType.XRayGoggles]: { name: 'X-Ray Goggles', description: 'Peek at the next community card (3 charges)' },
+    [ShopItemType.Rake]: { name: 'Rake', description: 'Secretly take 5% of every pot' },
+    [ShopItemType.HiddenCamera]: { name: 'Hidden Camera', description: 'See one of an opponent\'s hole cards at random (3 charges)' },
+  };
+  return info[type];
+}
+
+export function getEligibleShopItems(state: PlayerPrivateState): ShopItemType[] {
+  const items: ShopItemType[] = [];
+
+  // One-time unlocks
+  if (!state.hasCardSleeveUnlock) items.push(ShopItemType.CardSleeveUnlock);
+  if (!state.hasRake) items.push(ShopItemType.Rake);
+
+  // Card sleeve items (requires unlock + empty sleeve)
+  if (state.hasCardSleeveUnlock && state.sleeveCard === null) {
+    items.push(ShopItemType.ExtraCard);
+    items.push(ShopItemType.Joker);
+  }
+
+  // Charge-based items (can rebuy when charges are 0)
+  if (state.xrayCharges === 0) items.push(ShopItemType.XRayGoggles);
+  if (state.hiddenCameraCharges === 0) items.push(ShopItemType.HiddenCamera);
+
+  return items;
 }
 
 export function isStackable(item: ShopItemType): boolean {

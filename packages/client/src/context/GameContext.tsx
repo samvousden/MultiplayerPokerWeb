@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { GameState, PokerAction, PlayerPublicState, Card } from '@poker/shared';
+import { GameState, PokerAction, PlayerPublicState, Card, ShopSlotItem } from '@poker/shared';
 
 interface GameContextType {
   gameState: GameState | null;
@@ -9,10 +9,14 @@ interface GameContextType {
   isConnected: boolean;
   holeCards: Card[] | null;
   sleeveCard: Card | null;
-  allPlayerCards: Map<number, Card[]> | null; // All players' hole cards for showdown
-  winnerId: number | null; // Primary winner ID
-  winnerIds: number[]; // All winners in case of tie
-  foldedOut: boolean; // Whether the win was by fold-out (vs showdown)
+  allPlayerCards: Map<number, Card[]> | null;
+  winnerId: number | null;
+  winnerIds: number[];
+  foldedOut: boolean;
+  xrayCharges: number;
+  hiddenCameraCharges: number;
+  revealedCards: Map<number, Card>; // targetPlayerId -> revealed card
+  peekedCard: Card | null; // x-ray peeked card
   
   // Actions
   joinTable: (playerName: string) => Promise<number | false>;
@@ -22,6 +26,8 @@ interface GameContextType {
   submitAction: (action: PokerAction) => Promise<boolean>;
   useItem: (itemType: number, targetPlayerId?: number) => void;
   refreshSleeveCard: () => void;
+  useXRay: () => void;
+  useHiddenCamera: (targetPlayerId: number) => void;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -37,6 +43,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [winnerId, setWinnerId] = useState<number | null>(null);
   const [winnerIds, setWinnerIds] = useState<number[]>([]);
   const [foldedOut, setFoldedOut] = useState(false);
+  const [xrayCharges, setXrayCharges] = useState(0);
+  const [hiddenCameraCharges, setHiddenCameraCharges] = useState(0);
+  const [revealedCards, setRevealedCards] = useState<Map<number, Card>>(new Map());
+  const [peekedCard, setPeekedCard] = useState<Card | null>(null);
 
   const serverUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
@@ -69,6 +79,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     newSocket.on('hand-started', (state: GameState) => {
       setGameState(state);
       setHoleCards(null); // Clear old hole cards
+      setRevealedCards(new Map());
+      setPeekedCard(null);
     });
 
     newSocket.on('hole-cards', (cards: Card[]) => {
@@ -192,11 +204,37 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [socket, playerId]
   );
 
+  const useXRay = useCallback(() => {
+    if (!socket || !playerId) return;
+    socket.emit('use-xray', playerId, (response: any) => {
+      if (response.success) {
+        setPeekedCard(response.card);
+        setXrayCharges(response.chargesLeft);
+      }
+    });
+  }, [socket, playerId]);
+
+  const useHiddenCamera = useCallback((targetPlayerId: number) => {
+    if (!socket || !playerId) return;
+    socket.emit('use-hidden-camera', playerId, targetPlayerId, (response: any) => {
+      if (response.success) {
+        setRevealedCards(prev => {
+          const next = new Map(prev);
+          next.set(targetPlayerId, response.card);
+          return next;
+        });
+        setHiddenCameraCharges(response.chargesLeft);
+      }
+    });
+  }, [socket, playerId]);
+
   const refreshSleeveCard = useCallback(() => {
     if (!socket || !playerId) return;
     socket.emit('get-sleeve-card', playerId, (response: any) => {
       if (response.success) {
         setSleeveCard(response.sleeveCard);
+        if (response.xrayCharges !== undefined) setXrayCharges(response.xrayCharges);
+        if (response.hiddenCameraCharges !== undefined) setHiddenCameraCharges(response.hiddenCameraCharges);
       }
     });
   }, [socket, playerId]);
@@ -221,6 +259,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         winnerId,
         winnerIds,
         foldedOut,
+        xrayCharges,
+        hiddenCameraCharges,
+        revealedCards,
+        peekedCard,
         joinTable,
         playVsBots,
         setReady,
@@ -228,6 +270,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         submitAction,
         useItem,
         refreshSleeveCard,
+        useXRay,
+        useHiddenCamera,
       }}
     >
       {children}

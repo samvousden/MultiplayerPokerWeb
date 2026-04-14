@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import { GameManager } from './gameManager.js';
-import { GameState, PokerAction, ShopItemType, Card, getCardPrice } from '@poker/shared';
+import { GameState, PokerAction, ShopItemType, Card, getCardPrice, ShopSlotItem, resolveJokersForShowdown, isJokerCard } from '@poker/shared';
 
 const app = express();
 const httpServer = createServer(app);
@@ -109,11 +109,13 @@ function handleShowdown(): void {
     // Fold-out win: don't send hole cards
     io.emit('showdown', { cards: {}, winnerId: gameManager.getWinnerId(), winnerIds: gameManager.getWinnerIds(), foldedOut: true });
   } else {
-    // Regular showdown: send all hole cards
+    // Regular showdown: send all hole cards, resolving jokers to their optimal card
     const allCards: { [playerId: number]: any[] } = {};
+    const boardCards = currentState.board;
     const allHoleCards = gameManager.getAllHoleCards();
     allHoleCards.forEach((cards, pid) => {
-      allCards[pid] = cards;
+      const hasJoker = cards.some(c => isJokerCard(c));
+      allCards[pid] = hasJoker ? resolveJokersForShowdown(cards, boardCards) : cards;
     });
     io.emit('showdown', { cards: allCards, winnerId: gameManager.getWinnerId(), winnerIds: gameManager.getWinnerIds(), foldedOut: false });
   }
@@ -290,13 +292,42 @@ io.on('connection', (socket) => {
       // Send updated sleeve card info to the player who used the item
       const sleeveCard = gameManager.getPlayerSleeveCard(playerId);
       socket.emit('sleeve-card-updated', { sleeveCard });
+
+      // If this was a sleeve card swap, re-send updated hole cards so UI reflects immediately
+      if (useType === 21 || useType === 22) { // UseSleeveCardSwapHoleA / UseSleeveCardSwapHoleB
+        const updatedHoleCards = gameManager.getHoleCards(playerId);
+        if (updatedHoleCards) {
+          socket.emit('hole-cards', updatedHoleCards);
+        }
+      }
     }
   });
 
   socket.on('get-sleeve-card', (playerId: number, callback) => {
     const sleeveCard = gameManager.getPlayerSleeveCard(playerId);
     const hasUnlock = gameManager.hasCardSleeveUnlock(playerId);
-    callback({ success: true, sleeveCard, hasUnlock });
+    const ps = gameManager.getPlayerPrivateState(playerId);
+    callback({
+      success: true,
+      sleeveCard,
+      hasUnlock,
+      xrayCharges: ps?.xrayCharges ?? 0,
+      hiddenCameraCharges: ps?.hiddenCameraCharges ?? 0,
+    });
+  });
+
+  socket.on('get-shop-slots', (playerId: number, callback) => {
+    const slots = gameManager.generateShopSlots(playerId);
+    callback({ success: true, slots });
+  });
+
+  socket.on('refresh-extra-card-preview', (playerId: number, callback) => {
+    const slot = gameManager.refreshExtraCardPreview(playerId);
+    if (slot) {
+      callback({ success: true, slot });
+    } else {
+      callback({ success: false, error: 'No extra card slot found' });
+    }
   });
 
   socket.on('get-extra-card-preview', (playerId: number, callback) => {
@@ -334,6 +365,26 @@ io.on('connection', (socket) => {
       callback({ success: true });
     } else {
       callback({ success: false, error: 'Unable to purchase card' });
+    }
+  });
+
+  socket.on('use-xray', (playerId: number, callback) => {
+    const card = gameManager.useXRayGoggles(playerId);
+    if (card) {
+      const ps = gameManager.getPlayerPrivateState(playerId);
+      callback({ success: true, card, chargesLeft: ps?.xrayCharges ?? 0 });
+    } else {
+      callback({ success: false, error: 'Cannot use X-Ray Goggles now' });
+    }
+  });
+
+  socket.on('use-hidden-camera', (playerId: number, targetPlayerId: number, callback) => {
+    const card = gameManager.useHiddenCamera(playerId, targetPlayerId);
+    if (card) {
+      const ps = gameManager.getPlayerPrivateState(playerId);
+      callback({ success: true, card, chargesLeft: ps?.hiddenCameraCharges ?? 0 });
+    } else {
+      callback({ success: false, error: 'Cannot use Hidden Camera on that player' });
     }
   });
 

@@ -53,3 +53,14 @@ export function cardToString(card: Card): string {
 
   return `${rankNames[card.rank]}${suitSymbols[card.suit]}`;
 }
+
+export const JOKER_CARD: Card = { suit: -1 as unknown as Suit, rank: -1 as unknown as Rank };
+
+export function isJokerCard(card: Card): boolean {
+  return (card.suit as number) === -1 && (card.rank as number) === -1;
+}
+
+export function cardToDisplayString(card: Card): string {
+  if (isJokerCard(card)) return '🃏 Joker';
+  return cardToString(card);
+}

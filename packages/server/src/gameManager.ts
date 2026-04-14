@@ -9,12 +9,20 @@ import {
   Suit,
   Rank,
   evaluateBestHand,
+  evaluateBestHandWithJokers,
   ItemType,
   PlayerPrivateState,
   ShopItemType,
+  ShopItemRarity,
+  ShopSlotItem,
   UseItemType,
   getCardPrice,
+  getPrice,
+  getShopItemInfo,
+  getEligibleShopItems,
   cardToString,
+  isJokerCard,
+  JOKER_CARD,
 } from '@poker/shared';
 
 /**
@@ -25,10 +33,12 @@ export class GameManager {
   private gameState: GameState;
   private holeCards: Map<number, [Card, Card]> = new Map();
   private playerPrivateState: Map<number, PlayerPrivateState> = new Map();
+  private playerShopSlots: Map<number, ShopSlotItem[]> = new Map();
   private deck: Card[] = [];
   private rng = Math.random;
   private lastRaiserId: number = 0; // Track who last raised/bet
   private playersActedThisRound: Set<number> = new Set(); // Track who has acted
+  private sleeveSwappedThisRound: Set<number> = new Set(); // Track sleeve swaps per round
   private winnerId: number = 0; // Track the current hand winner
   private winnerIds: number[] = []; // Track all tied winners
   private foldedOut: boolean = false; // Track if winner folded out (vs showdown)
@@ -141,6 +151,8 @@ export class GameManager {
       sleeveCard: null,
       xrayCharges: 0,
       luckLevel: 0,
+      hasRake: false,
+      hiddenCameraCharges: 0,
     });
 
     return playerId;
@@ -177,6 +189,8 @@ export class GameManager {
       sleeveCard: null,
       xrayCharges: 0,
       luckLevel: 0,
+      hasRake: false,
+      hiddenCameraCharges: 0,
     });
 
     // Add 3 bots with auto-ready
@@ -206,6 +220,8 @@ export class GameManager {
         sleeveCard: null,
         xrayCharges: 0,
         luckLevel: 0,
+        hasRake: false,
+        hiddenCameraCharges: 0,
       });
     }
 
@@ -252,6 +268,7 @@ export class GameManager {
     this.gameState.board = [];
     this.holeCards.clear();
     this.playersActedThisRound.clear(); // Reset action tracking for new hand
+    this.sleeveSwappedThisRound.clear(); // Reset sleeve swap tracking for new hand
     this.lastRaiserId = 0;
 
     // Shuffle deck and deal
@@ -383,6 +400,11 @@ export class GameManager {
         return false;
       }
 
+      // Only 1 swap allowed per betting round
+      if (this.sleeveSwappedThisRound.has(playerId)) {
+        return false;
+      }
+
       // Can't swap if all-in
       if (player.isAllIn) {
         return false;
@@ -399,6 +421,7 @@ export class GameManager {
       holeCards[swapIndex] = privateState.sleeveCard;
       privateState.sleeveCard = swappedCard;
 
+      this.sleeveSwappedThisRound.add(playerId);
       return true;
     }
 
@@ -416,17 +439,53 @@ export class GameManager {
     // Handle CardSleeveUnlock
     if (itemType === ShopItemType.CardSleeveUnlock) {
       const cost = 200;
-      if (player.stack < cost) {
-        return false; // Not enough chips
-      }
-
-      if (privateState.hasCardSleeveUnlock) {
-        return false; // Already own this item
-      }
-
+      if (player.stack < cost) return false;
+      if (privateState.hasCardSleeveUnlock) return false;
       player.stack -= cost;
       privateState.hasCardSleeveUnlock = true;
       player.inventory.push(ShopItemType.CardSleeveUnlock);
+      return true;
+    }
+
+    // Handle Joker - put joker card in sleeve
+    if (itemType === ShopItemType.Joker) {
+      if (!privateState.hasCardSleeveUnlock) return false;
+      if (privateState.sleeveCard !== null) return false;
+      const cost = getPrice(ShopItemType.Joker);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.sleeveCard = JOKER_CARD;
+      return true;
+    }
+
+    // Handle XRayGoggles
+    if (itemType === ShopItemType.XRayGoggles) {
+      const cost = getPrice(ShopItemType.XRayGoggles);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.xrayCharges = 3;
+      player.inventory.push(ShopItemType.XRayGoggles);
+      return true;
+    }
+
+    // Handle Rake
+    if (itemType === ShopItemType.Rake) {
+      if (privateState.hasRake) return false;
+      const cost = getPrice(ShopItemType.Rake);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.hasRake = true;
+      player.inventory.push(ShopItemType.Rake);
+      return true;
+    }
+
+    // Handle HiddenCamera
+    if (itemType === ShopItemType.HiddenCamera) {
+      const cost = getPrice(ShopItemType.HiddenCamera);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.hiddenCameraCharges = 3;
+      player.inventory.push(ShopItemType.HiddenCamera);
       return true;
     }
 
@@ -512,7 +571,157 @@ export class GameManager {
     return privateState?.hasCardSleeveUnlock || false;
   }
 
+  generateShopSlots(playerId: number): ShopSlotItem[] {
+    const privateState = this.playerPrivateState.get(playerId);
+    if (!privateState) return [];
+
+    const eligible = getEligibleShopItems(privateState);
+
+    // Rarity weights for each item type
+    const itemWeights: Partial<Record<ShopItemType, number>> = {
+      [ShopItemType.CardSleeveUnlock]: 10,
+      [ShopItemType.ExtraCard]: 6,    // Common
+      [ShopItemType.Joker]: 1,        // Rare
+      [ShopItemType.XRayGoggles]: 6,  // Common
+      [ShopItemType.Rake]: 2,         // Uncommon
+      [ShopItemType.HiddenCamera]: 6, // Common
+    };
+
+    // Build weighted pool
+    let pool: ShopItemType[] = [];
+    for (const type of eligible) {
+      const weight = itemWeights[type] ?? 4;
+      for (let i = 0; i < weight; i++) pool.push(type);
+    }
+
+    // Weighted random selection of up to 3 unique items
+    const selected: ShopItemType[] = [];
+    const usedTypes = new Set<ShopItemType>();
+
+    while (selected.length < 3 && pool.length > 0) {
+      const idx = Math.floor(Math.random() * pool.length);
+      const type = pool[idx];
+      if (!usedTypes.has(type)) {
+        selected.push(type);
+        usedTypes.add(type);
+      }
+      pool = pool.filter(t => t !== type);
+    }
+
+    const slots: ShopSlotItem[] = selected.map((type: ShopItemType) => {
+      const info = getShopItemInfo(type);
+      const slot: ShopSlotItem = {
+        type,
+        price: getPrice(type),
+        name: info.name,
+        description: info.description,
+        rarity: ShopItemRarity.Common,
+      };
+
+      if (type === ShopItemType.ExtraCard) {
+        const card = this.getWeightedRandomCardForShop();
+        if (card) {
+          slot.previewCard = card;
+          slot.price = getCardPrice(card);
+          slot.rarity = card.rank === Rank.Ace ? ShopItemRarity.Uncommon : ShopItemRarity.Common;
+        }
+      } else if (type === ShopItemType.Joker) {
+        slot.rarity = ShopItemRarity.Rare;
+      } else if (type === ShopItemType.Rake) {
+        slot.rarity = ShopItemRarity.Uncommon;
+      }
+
+      return slot;
+    });
+
+    this.playerShopSlots.set(playerId, slots);
+    return slots;
+  }
+
+  getShopSlots(playerId: number): ShopSlotItem[] {
+    return this.playerShopSlots.get(playerId) || [];
+  }
+
+  refreshExtraCardPreview(playerId: number): ShopSlotItem | null {
+    const slots = this.playerShopSlots.get(playerId);
+    if (!slots) return null;
+
+    const extraCardSlot = slots.find(s => s.type === ShopItemType.ExtraCard);
+    if (!extraCardSlot) return null;
+
+    const card = this.getWeightedRandomCardForShop();
+    if (!card) return null;
+
+    extraCardSlot.previewCard = card;
+    extraCardSlot.price = getCardPrice(card);
+    extraCardSlot.rarity = card.rank === Rank.Ace ? ShopItemRarity.Uncommon : ShopItemRarity.Common;
+    return extraCardSlot;
+  }
+
+  useXRayGoggles(playerId: number): Card | null {
+    const privateState = this.playerPrivateState.get(playerId);
+    if (!privateState || privateState.xrayCharges <= 0) return null;
+    if (this.gameState.phase !== HandPhase.Betting) return null;
+    // All 5 community cards already on board at river — nothing left to peek at
+    if (this.gameState.round === BettingRound.River) return null;
+
+    if (this.deck.length === 0) return null;
+    privateState.xrayCharges--;
+    return this.deck[this.deck.length - 1];
+  }
+
+  useHiddenCamera(playerId: number, targetPlayerId: number): Card | null {
+    const privateState = this.playerPrivateState.get(playerId);
+    if (!privateState || privateState.hiddenCameraCharges <= 0) return null;
+    if (this.gameState.phase !== HandPhase.Betting) return null;
+
+    // Target must be in hand and not folded
+    const target = this.gameState.players.find(p => p.id === targetPlayerId);
+    if (!target || !target.isInHand || target.hasFolded) return null;
+
+    // Can't target yourself
+    if (targetPlayerId === playerId) return null;
+
+    const targetCards = this.holeCards.get(targetPlayerId);
+    if (!targetCards) return null;
+
+    privateState.hiddenCameraCharges--;
+    // Return a random one of their two hole cards
+    const idx = Math.floor(Math.random() * 2);
+    return targetCards[idx];
+  }
+
+  getPlayerPrivateState(playerId: number): PlayerPrivateState | undefined {
+    return this.playerPrivateState.get(playerId);
+  }
+
   // Private helpers
+
+  private getWeightedRandomCardForShop(): Card | null {
+    // Build available cards (excluding dealt hole cards + board)
+    const consumedCards = new Set<string>();
+    this.holeCards.forEach(([cardA, cardB]) => {
+      consumedCards.add(cardToString(cardA));
+      consumedCards.add(cardToString(cardB));
+    });
+    for (const card of this.gameState.board) {
+      consumedCards.add(cardToString(card));
+    }
+
+    // Weight: aces are uncommon (1 ticket), all other ranks are common (3 tickets)
+    const weightedPool: Card[] = [];
+    for (let suit = 0; suit < 4; suit++) {
+      for (let rank = 2; rank <= 14; rank++) {
+        const card: Card = { suit: suit as Suit, rank: rank as Rank };
+        if (consumedCards.has(cardToString(card))) continue;
+        const weight = rank === Rank.Ace ? 1 : 3;
+        for (let i = 0; i < weight; i++) weightedPool.push(card);
+      }
+    }
+
+    if (weightedPool.length === 0) return null;
+    return weightedPool[Math.floor(Math.random() * weightedPool.length)];
+  }
 
   private getRandomAvailableCard(): Card | null {
     // Create a set of all consumed cards (dealt hole cards + board cards)
@@ -640,6 +849,7 @@ export class GameManager {
     this.gameState.currentBetToMatch = 0;
     this.lastRaiserId = 0; // Reset for new round
     this.playersActedThisRound.clear(); // Reset action tracking for new round
+    this.sleeveSwappedThisRound.clear(); // Reset sleeve swap tracking for new round
 
     if (this.gameState.round === BettingRound.Preflop) {
       this.gameState.board = this.dealFlop();
@@ -698,7 +908,11 @@ export class GameManager {
     for (const player of activePlayers) {
       const hole = this.holeCards.get(player.id);
       if (hole) {
-        const handValue = evaluateBestHand([hole[0], hole[1]], this.gameState.board);
+        // Use joker-aware evaluation if any hole card is a joker
+        const hasJoker = hole.some(c => isJokerCard(c));
+        const handValue = hasJoker
+          ? evaluateBestHandWithJokers([hole[0], hole[1]], this.gameState.board)
+          : evaluateBestHand([hole[0], hole[1]], this.gameState.board);
         playerScores.push({ player, score: handValue.score });
         if (handValue.score > bestScore) {
           bestScore = handValue.score;
@@ -711,9 +925,22 @@ export class GameManager {
     this.winnerIds = winners.map(w => w.id);
     this.winnerId = winners[0].id; // Display first winner
 
-    // Split pot among all winners
-    const potShare = Math.floor(this.gameState.pot / winners.length);
-    const remainder = this.gameState.pot % winners.length;
+    // Apply rake before pot distribution
+    let remainingPot = this.gameState.pot;
+    for (const player of this.gameState.players) {
+      const ps = this.playerPrivateState.get(player.id);
+      if (ps?.hasRake && player.isInHand) {
+        const rakeAmount = Math.floor(this.gameState.pot * 0.05);
+        if (rakeAmount > 0) {
+          player.stack += rakeAmount;
+          remainingPot -= rakeAmount;
+        }
+      }
+    }
+
+    // Split remaining pot among all winners
+    const potShare = Math.floor(remainingPot / winners.length);
+    const remainder = remainingPot % winners.length;
     
     for (let i = 0; i < winners.length; i++) {
       // Give remainder to first winner if pot doesn't divide evenly
@@ -733,8 +960,22 @@ export class GameManager {
     if (activePlayers.length !== 1) return;
 
     const winner = activePlayers[0];
-    // Award pot to winner
-    winner.stack += this.gameState.pot;
+
+    // Apply rake before pot distribution
+    let remainingPot = this.gameState.pot;
+    for (const player of this.gameState.players) {
+      const ps = this.playerPrivateState.get(player.id);
+      if (ps?.hasRake && player.isInHand) {
+        const rakeAmount = Math.floor(this.gameState.pot * 0.05);
+        if (rakeAmount > 0) {
+          player.stack += rakeAmount;
+          remainingPot -= rakeAmount;
+        }
+      }
+    }
+
+    // Award remaining pot to winner
+    winner.stack += remainingPot;
     this.winnerId = winner.id;
     this.foldedOut = true;
 
