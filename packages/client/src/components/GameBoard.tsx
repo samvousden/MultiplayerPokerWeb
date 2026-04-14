@@ -24,7 +24,7 @@ const formatLastAction = (lastAction?: { type: number; amount?: number }): strin
 };
 
 export const GameBoard: React.FC = () => {
-  const { gameState, playerId, holeCards, sleeveCard, useItem, submitAction, xrayCharges, hiddenCameraCharges, revealedCards, peekedCard, useXRay, useHiddenCamera } = useGame();
+  const { gameState, playerId, holeCards, sleeveCard, sleeveCard2, useItem, submitAction, xrayCharges, hiddenCameraCharges, revealedCards, peekedCard, useXRay, useHiddenCamera } = useGame();
   const [raiseAmount, setRaiseAmount] = useState<string>('');
 
   if (!gameState || !playerId) {
@@ -33,7 +33,7 @@ export const GameBoard: React.FC = () => {
 
   const currentPlayer = gameState.players.find(p => p.id === playerId);
   const minRaise = gameState.currentBetToMatch + 10;
-  const canSwap = gameState.activePlayerId === playerId && !currentPlayer?.isAllIn && sleeveCard !== null;
+  const canSwap = gameState.activePlayerId === playerId && !currentPlayer?.isAllIn && (sleeveCard !== null || sleeveCard2 !== null);
   const canCheck = currentPlayer ? gameState.currentBetToMatch === currentPlayer.committedThisRound : false;
 
   const handleRaise = () => {
@@ -97,6 +97,36 @@ export const GameBoard: React.FC = () => {
             </div>
           )}
           {!canSwap && sleeveCard && (
+            <p className="swap-disabled-msg">Swaps only allowed on your turn</p>
+          )}
+        </div>
+      )}
+
+      {sleeveCard2 && (
+        <div className="sleeve-card-section">
+          <h3>Card Sleeve (Slot 2)</h3>
+          <div className="sleeve-card-display">
+            <div className={`card sleeve-card ${isJokerCard(sleeveCard2) ? 'joker-card' : isRedCard(sleeveCard2.suit) ? 'red-card' : ''}`}>
+              {cardToDisplayString(sleeveCard2)}
+            </div>
+          </div>
+          {canSwap && holeCards && holeCards.length === 2 && (
+            <div className="swap-buttons">
+              <button 
+                className="swap-btn"
+                onClick={() => useItem(UseItemType.UseSleeveCard2SwapHoleA)}
+              >
+                Swap with {cardToDisplayString(holeCards[0])}
+              </button>
+              <button 
+                className="swap-btn"
+                onClick={() => useItem(UseItemType.UseSleeveCard2SwapHoleB)}
+              >
+                Swap with {cardToDisplayString(holeCards[1])}
+              </button>
+            </div>
+          )}
+          {!canSwap && sleeveCard2 && (
             <p className="swap-disabled-msg">Swaps only allowed on your turn</p>
           )}
         </div>

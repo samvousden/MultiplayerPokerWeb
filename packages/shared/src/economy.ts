@@ -11,6 +11,7 @@ export enum ShopItemType {
   CardSleeveUnlock = 30,
   ExtraCard = 31,
   Joker = 32,
+  SleeveExtender = 33,
   XRayGoggles = 40,
   Rake = 41,
   HiddenCamera = 42,
@@ -26,6 +27,8 @@ export enum UseItemType {
   SmokeCigarette = 20,
   UseSleeveCardSwapHoleA = 21,
   UseSleeveCardSwapHoleB = 22,
+  UseSleeveCard2SwapHoleA = 23,
+  UseSleeveCard2SwapHoleB = 24,
   ShootPlayer = 30,
   UseXRayGoggles = 40,
   UseHiddenCamera = 41,
@@ -38,6 +41,8 @@ export interface PlayerPrivateState {
   bullets: number;
   hasCardSleeveUnlock: boolean;
   sleeveCard: Card | null;
+  hasSleeveExtender: boolean;
+  sleeveCard2: Card | null;
   xrayCharges: number;
   luckLevel: number; // from cigarettes
   hasRake: boolean;
@@ -69,6 +74,7 @@ export const ShopCatalog = {
   CardSleeveUnlock: 200,
   ExtraCard: 0, // Dynamic pricing applied at purchase time based on card rank
   Joker: 100,
+  SleeveExtender: 300,
   XRayGoggles: 150,
   Rake: 300,
   HiddenCamera: 150,
@@ -86,6 +92,7 @@ export function getPrice(item: ShopItemType): number {
     [ShopItemType.CardSleeveUnlock]: 200,
     [ShopItemType.ExtraCard]: 0, // Dynamic; use getCardPrice() instead
     [ShopItemType.Joker]: 100,
+    [ShopItemType.SleeveExtender]: 300,
     [ShopItemType.XRayGoggles]: 150,
     [ShopItemType.Rake]: 300,
     [ShopItemType.HiddenCamera]: 150,
@@ -117,6 +124,7 @@ export function getShopItemInfo(type: ShopItemType): { name: string; description
     [ShopItemType.Bullet]: { name: 'Bullet', description: 'Ammo for the gun' },
     [ShopItemType.CardSleeveUnlock]: { name: 'Card Sleeve Unlock', description: 'Hold a card in your sleeve to swap with a hole card before showdown' },
     [ShopItemType.ExtraCard]: { name: 'Extra Card', description: 'A random card from the deck to put in your sleeve' },
+    [ShopItemType.SleeveExtender]: { name: 'Card Sleeve Extender', description: 'Expand your sleeve to hold a second card' },
     [ShopItemType.Joker]: { name: 'Joker', description: 'A wild card that becomes the best possible card at showdown' },
     [ShopItemType.XRayGoggles]: { name: 'X-Ray Goggles', description: 'Peek at the next community card (3 charges)' },
     [ShopItemType.Rake]: { name: 'Rake', description: 'Secretly take 5% of every pot' },
@@ -132,10 +140,19 @@ export function getEligibleShopItems(state: PlayerPrivateState): ShopItemType[] 
   if (!state.hasCardSleeveUnlock) items.push(ShopItemType.CardSleeveUnlock);
   if (!state.hasRake) items.push(ShopItemType.Rake);
 
-  // Card sleeve items (requires unlock + empty sleeve)
-  if (state.hasCardSleeveUnlock && state.sleeveCard === null) {
-    items.push(ShopItemType.ExtraCard);
-    items.push(ShopItemType.Joker);
+  // Card sleeve extender (requires unlock, one-time purchase)
+  if (state.hasCardSleeveUnlock && !state.hasSleeveExtender) items.push(ShopItemType.SleeveExtender);
+
+  // Card sleeve items (requires unlock + at least one empty sleeve slot)
+  if (state.hasCardSleeveUnlock) {
+    const hasSlot1Empty = state.sleeveCard === null;
+    const hasSlot2Empty = state.hasSleeveExtender && state.sleeveCard2 === null;
+    if (hasSlot1Empty || hasSlot2Empty) {
+      items.push(ShopItemType.ExtraCard);
+    }
+    if (hasSlot1Empty || hasSlot2Empty) {
+      items.push(ShopItemType.Joker);
+    }
   }
 
   // Charge-based items (can rebuy when charges are 0)

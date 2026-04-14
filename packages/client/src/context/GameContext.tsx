@@ -9,6 +9,7 @@ interface GameContextType {
   isConnected: boolean;
   holeCards: Card[] | null;
   sleeveCard: Card | null;
+  sleeveCard2: Card | null;
   allPlayerCards: Map<number, Card[]> | null;
   winnerId: number | null;
   winnerIds: number[];
@@ -39,6 +40,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isConnected, setIsConnected] = useState(false);
   const [holeCards, setHoleCards] = useState<Card[] | null>(null);
   const [sleeveCard, setSleeveCard] = useState<Card | null>(null);
+  const [sleeveCard2, setSleeveCard2] = useState<Card | null>(null);
   const [allPlayerCards, setAllPlayerCards] = useState<Map<number, Card[]> | null>(null);
   const [winnerId, setWinnerId] = useState<number | null>(null);
   const [winnerIds, setWinnerIds] = useState<number[]>([]);
@@ -110,8 +112,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     });
 
-    newSocket.on('sleeve-card-updated', (data: { sleeveCard: Card | null }) => {
+    newSocket.on('sleeve-card-updated', (data: { sleeveCard: Card | null; sleeveCard2?: Card | null }) => {
       setSleeveCard(data.sleeveCard);
+      setSleeveCard2(data.sleeveCard2 ?? null);
     });
 
     setSocket(newSocket);
@@ -233,6 +236,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     socket.emit('get-sleeve-card', playerId, (response: any) => {
       if (response.success) {
         setSleeveCard(response.sleeveCard);
+        setSleeveCard2(response.sleeveCard2 ?? null);
         if (response.xrayCharges !== undefined) setXrayCharges(response.xrayCharges);
         if (response.hiddenCameraCharges !== undefined) setHiddenCameraCharges(response.hiddenCameraCharges);
       }
@@ -255,6 +259,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isConnected,
         holeCards,
         sleeveCard,
+        sleeveCard2,
         allPlayerCards,
         winnerId,
         winnerIds,

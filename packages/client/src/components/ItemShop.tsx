@@ -6,7 +6,6 @@ export const ItemShop: React.FC = () => {
   const { gameState, socket, playerId, setReady } = useGame();
   const [shopSlots, setShopSlots] = useState<ShopSlotItem[]>([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
-  const [isRefreshingPreview, setIsRefreshingPreview] = useState(false);
 
   if (!gameState) {
     return <div>Loading...</div>;
@@ -31,14 +30,24 @@ export const ItemShop: React.FC = () => {
     setReady(true);
   };
 
-  const handleBuyItem = useCallback((slotType: ShopItemType, previewCard?: Card) => {
+  const handleBuyItem = useCallback((slotType: ShopItemType, previewCard?: Card, slotIndex?: number) => {
     if (!socket || !playerId) return;
 
     if (slotType === ShopItemType.ExtraCard && previewCard) {
       socket.emit('buy-extra-card', playerId, previewCard, (response: any) => {
         if (response.success) {
-          // Remove the bought slot
-          setShopSlots(prev => prev.filter(s => s.type !== ShopItemType.ExtraCard));
+          // Remove only the specific slot that was bought (by index if provided, else by card match)
+          setShopSlots(prev => {
+            if (slotIndex !== undefined) {
+              return prev.filter((_, i) => i !== slotIndex);
+            }
+            const idx = prev.findIndex(s =>
+              s.type === ShopItemType.ExtraCard &&
+              s.previewCard?.rank === previewCard.rank &&
+              s.previewCard?.suit === previewCard.suit
+            );
+            return idx >= 0 ? prev.filter((_, i) => i !== idx) : prev;
+          });
         } else {
           alert(`Failed to purchase: ${response.error}`);
         }
@@ -48,8 +57,8 @@ export const ItemShop: React.FC = () => {
         if (response.success) {
           // Remove the bought slot, and regenerate slots for dependency items
           setShopSlots(prev => prev.filter(s => s.type !== slotType));
-          // If bought Card Sleeve Unlock, refresh slots to potentially unlock new items
-          if (slotType === ShopItemType.CardSleeveUnlock) {
+          // If bought Card Sleeve Unlock or Sleeve Extender, refresh slots to potentially unlock new items
+          if (slotType === ShopItemType.CardSleeveUnlock || slotType === ShopItemType.SleeveExtender) {
             socket.emit('get-shop-slots', playerId, (resp: any) => {
               if (resp.success) setShopSlots(resp.slots);
             });
@@ -59,21 +68,6 @@ export const ItemShop: React.FC = () => {
         }
       });
     }
-  }, [socket, playerId]);
-
-  const handleRefreshExtraCard = useCallback(() => {
-    if (!socket || !playerId) return;
-    setIsRefreshingPreview(true);
-    socket.emit('refresh-extra-card-preview', playerId, (response: any) => {
-      setIsRefreshingPreview(false);
-      if (response.success) {
-        setShopSlots(prev => prev.map(s =>
-          s.type === ShopItemType.ExtraCard
-            ? { ...s, previewCard: response.slot.previewCard, price: response.slot.price }
-            : s
-        ));
-      }
-    });
   }, [socket, playerId]);
 
   const renderSlot = (slot: ShopSlotItem, index: number) => {
@@ -92,7 +86,7 @@ export const ItemShop: React.FC = () => {
           <p className="item-description">{slot.description}</p>
 
           {slot.type === ShopItemType.ExtraCard ? (
-            // Extra Card with preview
+            // Extra Card - show directly, no preview mechanic
             slot.previewCard ? (
               <>
                 <div className="card-preview">
@@ -101,22 +95,13 @@ export const ItemShop: React.FC = () => {
                   </div>
                   <p className="item-price">${slot.price}</p>
                 </div>
-                <div className="preview-buttons">
-                  <button
-                    className="buy-btn"
-                    onClick={() => handleBuyItem(slot.type, slot.previewCard!)}
-                    disabled={!canAfford}
-                  >
-                    {canAfford ? 'Buy This Card' : 'Insufficient Funds'}
-                  </button>
-                  <button
-                    className="preview-btn"
-                    onClick={handleRefreshExtraCard}
-                    disabled={isRefreshingPreview}
-                  >
-                    {isRefreshingPreview ? 'Loading...' : 'Different Card'}
-                  </button>
-                </div>
+                <button
+                  className="buy-btn"
+                  onClick={() => handleBuyItem(slot.type, slot.previewCard!, index)}
+                  disabled={!canAfford}
+                >
+                  {canAfford ? 'Buy This Card' : 'Insufficient Funds'}
+                </button>
               </>
             ) : (
               <p className="item-price">$30-$50</p>

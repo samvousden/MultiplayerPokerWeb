@@ -149,6 +149,8 @@ export class GameManager {
       bullets: 0,
       hasCardSleeveUnlock: false,
       sleeveCard: null,
+      hasSleeveExtender: false,
+      sleeveCard2: null,
       xrayCharges: 0,
       luckLevel: 0,
       hasRake: false,
@@ -187,6 +189,8 @@ export class GameManager {
       bullets: 0,
       hasCardSleeveUnlock: false,
       sleeveCard: null,
+      hasSleeveExtender: false,
+      sleeveCard2: null,
       xrayCharges: 0,
       luckLevel: 0,
       hasRake: false,
@@ -218,6 +222,8 @@ export class GameManager {
         bullets: 0,
         hasCardSleeveUnlock: false,
         sleeveCard: null,
+        hasSleeveExtender: false,
+        sleeveCard2: null,
         xrayCharges: 0,
         luckLevel: 0,
         hasRake: false,
@@ -393,7 +399,7 @@ export class GameManager {
       return false;
     }
 
-    // Handle sleeve card swaps
+    // Handle sleeve card swaps (slot 1)
     if (useType === UseItemType.UseSleeveCardSwapHoleA || useType === UseItemType.UseSleeveCardSwapHoleB) {
       // Validate player has unlock and sleeve card
       if (!privateState.hasCardSleeveUnlock || !privateState.sleeveCard) {
@@ -425,6 +431,34 @@ export class GameManager {
       return true;
     }
 
+    // Handle sleeve card swaps (slot 2)
+    if (useType === UseItemType.UseSleeveCard2SwapHoleA || useType === UseItemType.UseSleeveCard2SwapHoleB) {
+      if (!privateState.hasCardSleeveUnlock || !privateState.hasSleeveExtender || !privateState.sleeveCard2) {
+        return false;
+      }
+
+      // Only 1 swap allowed per betting round (shared limit with slot 1)
+      if (this.sleeveSwappedThisRound.has(playerId)) {
+        return false;
+      }
+
+      if (player.isAllIn) {
+        return false;
+      }
+
+      const holeCards = this.holeCards.get(playerId);
+      if (!holeCards) return false;
+
+      const swapIndex = useType === UseItemType.UseSleeveCard2SwapHoleA ? 0 : 1;
+      const swappedCard = holeCards[swapIndex];
+
+      holeCards[swapIndex] = privateState.sleeveCard2;
+      privateState.sleeveCard2 = swappedCard;
+
+      this.sleeveSwappedThisRound.add(playerId);
+      return true;
+    }
+
     // Default: other item usages (banking, etc.)
     return true;
   }
@@ -450,11 +484,31 @@ export class GameManager {
     // Handle Joker - put joker card in sleeve
     if (itemType === ShopItemType.Joker) {
       if (!privateState.hasCardSleeveUnlock) return false;
-      if (privateState.sleeveCard !== null) return false;
+      // Fill slot 1 first, then slot 2 if extender owned
+      if (privateState.sleeveCard !== null) {
+        if (!privateState.hasSleeveExtender || privateState.sleeveCard2 !== null) return false;
+        const cost = getPrice(ShopItemType.Joker);
+        if (player.stack < cost) return false;
+        player.stack -= cost;
+        privateState.sleeveCard2 = JOKER_CARD;
+        return true;
+      }
       const cost = getPrice(ShopItemType.Joker);
       if (player.stack < cost) return false;
       player.stack -= cost;
       privateState.sleeveCard = JOKER_CARD;
+      return true;
+    }
+
+    // Handle SleeveExtender
+    if (itemType === ShopItemType.SleeveExtender) {
+      if (!privateState.hasCardSleeveUnlock) return false;
+      if (privateState.hasSleeveExtender) return false;
+      const cost = getPrice(ShopItemType.SleeveExtender);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.hasSleeveExtender = true;
+      player.inventory.push(ShopItemType.SleeveExtender);
       return true;
     }
 
@@ -489,26 +543,25 @@ export class GameManager {
       return true;
     }
 
-    // Handle ExtraCard - select random card and deduct dynamic cost
+    // Handle ExtraCard - select random card and deduct dynamic cost (fallback; normally use buy-extra-card)
     if (itemType === ShopItemType.ExtraCard) {
-      // Only allow one sleeve card at a time
-      if (privateState.sleeveCard !== null) {
-        return false;
-      }
-
       const randomCard = this.getRandomAvailableCard();
-      if (!randomCard) {
-        return false; // No cards available (shouldn't happen)
-      }
+      if (!randomCard) return false;
 
       const cost = getCardPrice(randomCard);
-      if (player.stack < cost) {
-        return false; // Not enough chips
-      }
+      if (player.stack < cost) return false;
 
-      player.stack -= cost;
-      privateState.sleeveCard = randomCard;
-      return true;
+      if (privateState.sleeveCard === null) {
+        player.stack -= cost;
+        privateState.sleeveCard = randomCard;
+        return true;
+      }
+      if (privateState.hasSleeveExtender && privateState.sleeveCard2 === null) {
+        player.stack -= cost;
+        privateState.sleeveCard2 = randomCard;
+        return true;
+      }
+      return false;
     }
 
     // Default existing items (Item1, Item2, Item3)
@@ -546,24 +599,37 @@ export class GameManager {
     const privateState = this.playerPrivateState.get(playerId);
     if (!privateState) return false;
 
-    // Only allow one sleeve card at a time
-    if (privateState.sleeveCard !== null) {
-      return false;
+    // Try slot 1 first, then slot 2 if extender owned
+    if (privateState.sleeveCard === null) {
+      const cost = getCardPrice(card);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.sleeveCard = card;
+      return true;
     }
 
-    const cost = getCardPrice(card);
-    if (player.stack < cost) {
-      return false; // Not enough chips
+    if (privateState.hasSleeveExtender && privateState.sleeveCard2 === null) {
+      const cost = getCardPrice(card);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.sleeveCard2 = card;
+      return true;
     }
 
-    player.stack -= cost;
-    privateState.sleeveCard = card;
-    return true;
+    return false; // Both slots full
   }
 
   getPlayerSleeveCard(playerId: number): Card | null {
     const privateState = this.playerPrivateState.get(playerId);
     return privateState?.sleeveCard || null;
+  }
+
+  getPlayerSleeveCards(playerId: number): { sleeveCard: Card | null; sleeveCard2: Card | null } {
+    const privateState = this.playerPrivateState.get(playerId);
+    return {
+      sleeveCard: privateState?.sleeveCard || null,
+      sleeveCard2: privateState?.sleeveCard2 || null,
+    };
   }
 
   hasCardSleeveUnlock(playerId: number): boolean {
@@ -579,12 +645,13 @@ export class GameManager {
 
     // Rarity weights for each item type
     const itemWeights: Partial<Record<ShopItemType, number>> = {
-      [ShopItemType.CardSleeveUnlock]: 10,
-      [ShopItemType.ExtraCard]: 6,    // Common
-      [ShopItemType.Joker]: 1,        // Rare
-      [ShopItemType.XRayGoggles]: 6,  // Common
-      [ShopItemType.Rake]: 2,         // Uncommon
-      [ShopItemType.HiddenCamera]: 6, // Common
+      [ShopItemType.CardSleeveUnlock]: 4,   // Uncommon
+      [ShopItemType.ExtraCard]: 6,          // Common
+      [ShopItemType.Joker]: 1,              // Rare
+      [ShopItemType.SleeveExtender]: 1,     // Rare
+      [ShopItemType.XRayGoggles]: 6,        // Common
+      [ShopItemType.Rake]: 2,              // Uncommon
+      [ShopItemType.HiddenCamera]: 6,       // Common
     };
 
     // Build weighted pool
@@ -594,18 +661,24 @@ export class GameManager {
       for (let i = 0; i < weight; i++) pool.push(type);
     }
 
-    // Weighted random selection of up to 3 unique items
+    // Weighted random selection: ExtraCard can appear multiple times, others are unique
     const selected: ShopItemType[] = [];
     const usedTypes = new Set<ShopItemType>();
 
     while (selected.length < 3 && pool.length > 0) {
       const idx = Math.floor(Math.random() * pool.length);
       const type = pool[idx];
-      if (!usedTypes.has(type)) {
+      if (type === ShopItemType.ExtraCard) {
+        // ExtraCard can appear in multiple slots
+        selected.push(type);
+        pool.splice(idx, 1); // Remove only this one ticket
+      } else if (!usedTypes.has(type)) {
         selected.push(type);
         usedTypes.add(type);
+        pool = pool.filter(t => t !== type);
+      } else {
+        pool = pool.filter(t => t !== type);
       }
-      pool = pool.filter(t => t !== type);
     }
 
     const slots: ShopSlotItem[] = selected.map((type: ShopItemType) => {
@@ -623,12 +696,16 @@ export class GameManager {
         if (card) {
           slot.previewCard = card;
           slot.price = getCardPrice(card);
-          slot.rarity = card.rank === Rank.Ace ? ShopItemRarity.Uncommon : ShopItemRarity.Common;
+          slot.rarity = ShopItemRarity.Common;
         }
+      } else if (type === ShopItemType.CardSleeveUnlock) {
+        slot.rarity = ShopItemRarity.Uncommon;
       } else if (type === ShopItemType.Joker) {
         slot.rarity = ShopItemRarity.Rare;
       } else if (type === ShopItemType.Rake) {
         slot.rarity = ShopItemRarity.Uncommon;
+      } else if (type === ShopItemType.SleeveExtender) {
+        slot.rarity = ShopItemRarity.Rare;
       }
 
       return slot;

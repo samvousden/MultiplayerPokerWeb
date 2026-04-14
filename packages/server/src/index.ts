@@ -23,7 +23,7 @@ let lastGamePhase = 0; // Track last phase to detect showdown
 
 // Helper function to execute bot turns with delays
 async function executeBotTurns(): Promise<void> {
-  const BOT_DELAY_MS = 2000; // 2 seconds
+  const BOT_DELAY_MS = 1000; // 1 second
   let iterations = 0; // Prevent infinite loops
   const MAX_ITERATIONS = 20; // Safety limit
   
@@ -290,11 +290,11 @@ io.on('connection', (socket) => {
       io.emit('game-state-updated', gameManager.getGameState());
       
       // Send updated sleeve card info to the player who used the item
-      const sleeveCard = gameManager.getPlayerSleeveCard(playerId);
-      socket.emit('sleeve-card-updated', { sleeveCard });
+      const { sleeveCard, sleeveCard2 } = gameManager.getPlayerSleeveCards(playerId);
+      socket.emit('sleeve-card-updated', { sleeveCard, sleeveCard2 });
 
       // If this was a sleeve card swap, re-send updated hole cards so UI reflects immediately
-      if (useType === 21 || useType === 22) { // UseSleeveCardSwapHoleA / UseSleeveCardSwapHoleB
+      if (useType === 21 || useType === 22 || useType === 23 || useType === 24) { // sleeve swap types (A/B for slot 1 and slot 2)
         const updatedHoleCards = gameManager.getHoleCards(playerId);
         if (updatedHoleCards) {
           socket.emit('hole-cards', updatedHoleCards);
@@ -304,12 +304,13 @@ io.on('connection', (socket) => {
   });
 
   socket.on('get-sleeve-card', (playerId: number, callback) => {
-    const sleeveCard = gameManager.getPlayerSleeveCard(playerId);
+    const { sleeveCard, sleeveCard2 } = gameManager.getPlayerSleeveCards(playerId);
     const hasUnlock = gameManager.hasCardSleeveUnlock(playerId);
     const ps = gameManager.getPlayerPrivateState(playerId);
     callback({
       success: true,
       sleeveCard,
+      sleeveCard2,
       hasUnlock,
       xrayCharges: ps?.xrayCharges ?? 0,
       hiddenCameraCharges: ps?.hiddenCameraCharges ?? 0,
@@ -355,11 +356,11 @@ io.on('connection', (socket) => {
       io.emit('game-state-updated', gameManager.getGameState());
       
       // Send updated sleeve card info to the player who bought the card
-      const sleeveCard = gameManager.getPlayerSleeveCard(playerId);
+      const { sleeveCard, sleeveCard2 } = gameManager.getPlayerSleeveCards(playerId);
       const playerSocketId = Array.from(playerSessions.entries())
         .find(([_, pid]) => pid === playerId)?.[0];
       if (playerSocketId) {
-        io.to(playerSocketId).emit('sleeve-card-updated', { sleeveCard });
+        io.to(playerSocketId).emit('sleeve-card-updated', { sleeveCard, sleeveCard2 });
       }
       
       callback({ success: true });
@@ -393,6 +394,11 @@ io.on('connection', (socket) => {
     
     if (success) {
       io.emit('game-state-updated', gameManager.getGameState());
+      // Update sleeve state if needed (Joker goes to sleeve, SleeveExtender unlocks slot 2)
+      if (itemType === ShopItemType.Joker || itemType === ShopItemType.SleeveExtender) {
+        const { sleeveCard, sleeveCard2 } = gameManager.getPlayerSleeveCards(playerId);
+        socket.emit('sleeve-card-updated', { sleeveCard, sleeveCard2 });
+      }
       callback({ success: true });
     } else {
       callback({ success: false, error: 'Unable to purchase item' });
