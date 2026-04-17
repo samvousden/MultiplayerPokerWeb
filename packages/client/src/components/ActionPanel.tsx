@@ -22,7 +22,7 @@ export const ActionPanel: React.FC = () => {
     );
   }
 
-  const minRaise = gameState.currentBetToMatch + 10;
+  const minRaise = gameState.currentBetToMatch + gameState.bigBlind;
   const canCheck = gameState.currentBetToMatch === player.committedThisRound;
 
   const handleRaise = () => {

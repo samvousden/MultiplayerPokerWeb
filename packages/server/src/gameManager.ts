@@ -54,6 +54,9 @@ export class GameManager {
   private winnerId: number = 0; // Track the current hand winner
   private winnerIds: number[] = []; // Track all tied winners
   private foldedOut: boolean = false; // Track if winner folded out (vs showdown)
+  private smallBlind: number = 5;
+  private bigBlind: number = 10;
+  private handsPlayedSinceBlindIncrease: number = 0;
 
   constructor() {
     this.gameState = {
@@ -63,6 +66,8 @@ export class GameManager {
       activePlayerId: 0,
       pot: 0,
       currentBetToMatch: 0,
+      smallBlind: 5,
+      bigBlind: 10,
       players: [],
       board: [],
       caughtCheaterPlayerId: null,
@@ -253,7 +258,7 @@ export class GameManager {
     botCommitted: number,
     botStack: number,
   ): PokerAction {
-    const MIN_OPEN = 20; // minimum opening bet when no previous bet exists
+    const MIN_OPEN = this.bigBlind * 2; // minimum opening bet when no previous bet exists
     let raiseToAmount: number;
 
     if (currentBet === 0) {
@@ -414,10 +419,15 @@ export class GameManager {
     this.winnerId = 0;
     this.winnerIds = [];
     this.foldedOut = false;
+    this.smallBlind = 5;
+    this.bigBlind = 10;
+    this.handsPlayedSinceBlindIncrease = 0;
     this.gameState.phase = HandPhase.Lobby;
     this.gameState.round = BettingRound.None;
     this.gameState.pot = 0;
     this.gameState.currentBetToMatch = 0;
+    this.gameState.smallBlind = 5;
+    this.gameState.bigBlind = 10;
     this.gameState.board = [];
     this.gameState.activePlayerId = 0;
     this.gameState.dealerPlayerId = 0;
@@ -570,6 +580,17 @@ export class GameManager {
       const dealerIdx = activePlayers.findIndex(p => p.id === this.gameState.dealerPlayerId);
       const nextIdx = (dealerIdx + 1) % activePlayers.length;
       this.gameState.dealerPlayerId = activePlayers[nextIdx].id;
+    }
+
+    // Blind increase — double every two full rotations around the table
+    this.handsPlayedSinceBlindIncrease++;
+    const handsPerIncrease = activePlayers.length * 2;
+    if (this.handsPlayedSinceBlindIncrease >= handsPerIncrease) {
+      this.smallBlind *= 2;
+      this.bigBlind *= 2;
+      this.gameState.smallBlind = this.smallBlind;
+      this.gameState.bigBlind = this.bigBlind;
+      this.handsPlayedSinceBlindIncrease = 0;
     }
 
     this.gameState.phase = HandPhase.Dealing;
@@ -1511,8 +1532,8 @@ export class GameManager {
   }
 
   private postBlinds(): void {
-    const smallBlind = 5;
-    const bigBlind = 10;
+    const smallBlind = this.smallBlind;
+    const bigBlind = this.bigBlind;
 
     const smallBlindPlayer = this.getNextActivePlayer(this.gameState.dealerPlayerId);
     const bigBlindPlayer = this.getNextActivePlayer(smallBlindPlayer);

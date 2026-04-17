@@ -15,15 +15,17 @@ import {
 import { CardDisplay } from './CardDisplay';
 
 // ── Grid constants ──────────────────────────────────────────────────────────
-const COLS = 1;
+const COLS = 2;
 const ROWS = 10;
-const TOTAL = COLS * ROWS; // 10 slots per section
+const TOTAL = COLS * ROWS; // 20 slots — 2 columns × 10 rows, column-fill order
 
 // ── Entry types ─────────────────────────────────────────────────────────────
 type ActiveEntry =
   | { id: string; kind: 'gun'; bullets: number }
   | { id: string; kind: 'xray'; charges: number; peeked: boolean }
+  | { id: string; kind: 'xray-reveal' }
   | { id: string; kind: 'camera'; charges: number }
+  | { id: string; kind: 'camera-reveal' }
   | { id: string; kind: 'sleeve'; slotIndex: 0 | 1; card: Card; usedThisHand: boolean }
   | { id: string; kind: 'bond'; index: number; bond: BondState }
   | { id: string; kind: 'stockOption'; index: number; option: StockOptionState };
@@ -81,10 +83,14 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
   const activeEntries = useMemo<ActiveEntry[]>(() => {
     const e: ActiveEntry[] = [];
     if (hasGun) e.push({ id: 'gun', kind: 'gun', bullets });
-    if (xrayCharges > 0 || peekedCard !== null)
+    if (xrayCharges > 0 || peekedCard !== null) {
       e.push({ id: 'xray', kind: 'xray', charges: xrayCharges, peeked: peekedCard !== null });
-    if (hiddenCameraCharges > 0 || revealedCards.size > 0)
+      e.push({ id: 'xray-reveal', kind: 'xray-reveal' });
+    }
+    if (hiddenCameraCharges > 0 || revealedCards.size > 0) {
       e.push({ id: 'camera', kind: 'camera', charges: hiddenCameraCharges });
+      e.push({ id: 'camera-reveal', kind: 'camera-reveal' });
+    }
     if (sleeveCard)
       e.push({ id: 'sleeve-0', kind: 'sleeve', slotIndex: 0, card: sleeveCard, usedThisHand: sleeveUsedThisHand });
     if (sleeveCard2)
@@ -182,11 +188,6 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
             <span className="item-bag-icon">🔍</span>
             <span className="item-bag-label">X-Ray</span>
             <span className="item-bag-badge">×{entry.charges}</span>
-            {peekedCard && (
-              <div className="item-bag-peeked-card">
-                <CardDisplay card={peekedCard} className="item-bag-card" mode="display" />
-              </div>
-            )}
             <button
               className="item-bag-use-btn"
               onClick={useXRay}
@@ -194,6 +195,17 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
             >
               {entry.peeked ? 'Peeked' : 'Use'}
             </button>
+          </div>
+        );
+      }
+
+      case 'xray-reveal': {
+        return (
+          <div className="item-bag-cell-content item-bag-reveal-cell">
+            {peekedCard
+              ? <CardDisplay card={peekedCard} className="item-bag-card" mode="display" />
+              : <span className="item-bag-reveal-hint">peek reveals here</span>
+            }
           </div>
         );
       }
@@ -206,12 +218,6 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
             <span className="item-bag-icon">📷</span>
             <span className="item-bag-label">Camera</span>
             <span className="item-bag-badge">×{entry.charges}</span>
-            {Array.from(revealedCards.entries()).map(([pid, card]) => (
-              <div key={pid} className="item-bag-peeked-card">
-                <span className="item-bag-hint">{gameState?.players.find(p => p.id === pid)?.name ?? `P${pid}`}</span>
-                <CardDisplay card={card} className="item-bag-card" mode="display" />
-              </div>
-            ))}
             <button
               className="item-bag-use-btn"
               onClick={() => setTargetingId(entry.id)}
@@ -219,6 +225,26 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
             >
               Spy
             </button>
+          </div>
+        );
+      }
+
+      case 'camera-reveal': {
+        if (revealedCards.size === 0) {
+          return (
+            <div className="item-bag-cell-content item-bag-reveal-cell">
+              <span className="item-bag-reveal-hint">spy reveals here</span>
+            </div>
+          );
+        }
+        return (
+          <div className="item-bag-cell-content item-bag-reveal-cell">
+            {Array.from(revealedCards.entries()).map(([pid, card]) => (
+              <div key={pid} className="item-bag-peeked-card">
+                <span className="item-bag-hint">{gameState?.players.find(p => p.id === pid)?.name ?? `P${pid}`}</span>
+                <CardDisplay card={card} className="item-bag-card" mode="display" />
+              </div>
+            ))}
           </div>
         );
       }
@@ -297,7 +323,7 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
     );
   }
 
-  function renderGrid<T extends { id: string }>(
+  function renderGrid<T extends { id: string; kind: string }>(
     entries: T[],
     renderSlot: (e: T) => React.ReactNode,
   ) {
@@ -305,10 +331,15 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
       <div className="item-bag-grid">
         {Array.from({ length: TOTAL }, (_, i) => {
           const entry = entries[i];
+          const isReveal = entry?.kind.endsWith('-reveal');
           return (
             <div
               key={entry?.id ?? `empty-${i}`}
-              className={`item-bag-slot${entry ? ' item-bag-slot--filled' : ' item-bag-slot--empty'}`}
+              className={[
+                'item-bag-slot',
+                entry ? 'item-bag-slot--filled' : 'item-bag-slot--empty',
+                isReveal ? 'item-bag-slot--reveal' : '',
+              ].join(' ').trim()}
             >
               {entry ? renderSlot(entry) : null}
             </div>

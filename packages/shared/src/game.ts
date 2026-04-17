@@ -66,6 +66,8 @@ export interface GameState {
   activePlayerId: number;
   pot: number;
   currentBetToMatch: number;
+  smallBlind: number;
+  bigBlind: number;
   players: PlayerPublicState[];
   board: Card[];
   caughtCheaterPlayerId: number | null;

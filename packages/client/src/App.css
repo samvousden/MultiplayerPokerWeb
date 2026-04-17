@@ -1296,11 +1296,12 @@
   padding-left: 2px;
 }
 
-/* 1 × 10 column grid running the full height of the bag */
+/* 2 × 10 grid, column-fill: left column fills first so reveal slot lands directly below its item */
 .item-bag-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
   grid-template-rows: repeat(10, 1fr);
+  grid-auto-flow: column;
   gap: 3px;
   flex: 1;
 }
@@ -1416,6 +1417,30 @@
 .item-bag-swap-row {
   display: flex;
   gap: 3px;
+}
+
+/* Reveal slots — shown directly below goggles / camera item slots */
+.item-bag-slot--reveal.item-bag-slot--empty,
+.item-bag-slot--reveal.item-bag-slot--filled {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px dashed rgba(255, 215, 0, 0.25);
+}
+
+.item-bag-reveal-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 62px;
+  padding: 4px 3px;
+}
+
+.item-bag-reveal-hint {
+  font-size: 0.7em;
+  color: rgba(255, 255, 255, 0.25);
+  font-style: italic;
+  text-align: center;
 }
 
 .item-bag-swap-btn {
