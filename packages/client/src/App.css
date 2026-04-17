@@ -616,22 +616,34 @@
   flex-shrink: 0;
 }
 
-.rarity-common {
-  background: rgba(150, 150, 150, 0.25);
-  color: #bbb;
-  border: 1px solid #777;
+.rarity-copper {
+  background: rgba(184, 115, 51, 0.22);
+  color: #cd7f32;
+  border: 1px solid #cd7f32;
 }
 
-.rarity-uncommon {
+.rarity-bronze {
   background: rgba(30, 180, 130, 0.2);
   color: #2ecc71;
   border: 1px solid #2ecc71;
 }
 
-.rarity-rare {
+.rarity-silver {
   background: rgba(160, 60, 220, 0.2);
   color: #c77dff;
   border: 1px solid #c77dff;
+}
+
+.rarity-gold {
+  background: rgba(255, 200, 0, 0.2);
+  color: #ffd700;
+  border: 1px solid #ffd700;
+}
+
+.rarity-unique {
+  background: rgba(220, 30, 30, 0.2);
+  color: #ff4444;
+  border: 1px solid #ff4444;
 }
 
 .item-description {
@@ -1258,7 +1270,7 @@
 /* ── Item Bag ────────────────────────────────────────────────────────────── */
 .item-bag {
   flex-shrink: 0;
-  width: 150px;
+  width: 300px;
   background: rgba(144, 238, 144, 0.08);
   border: 2px solid rgba(144, 238, 144, 0.35);
   border-radius: 10px;

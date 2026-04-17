@@ -37,17 +37,25 @@ type PassiveEntry =
   | { id: string; kind: 'fourLeafClover' }
   | { id: string; kind: 'fiveLeafClover' }
   | { id: string; kind: 'cigarette'; buff: LuckBuff }
-  | { id: string; kind: 'whiskey'; buff: LuckBuff };
+  | { id: string; kind: 'whiskey'; buff: LuckBuff }
+  | { id: string; kind: 'heartOfHearts' }
+  | { id: string; kind: 'spadeOfSpades' }
+  | { id: string; kind: 'pairOfPairs' }
+  | { id: string; kind: 'improvedPairOfPairs' };
 
 // ── Passive item metadata ────────────────────────────────────────────────────
 const PASSIVE_BASE_META: Record<PassiveEntry['kind'], { label: string; icon: string; baseTooltip: string }> = {
-  cardSleeveUnlock: { icon: '🃏', label: 'Big Sleeves',   baseTooltip: 'Lets you hide one card in your sleeve to swap with a hole card.' },
-  sleeveExtender:   { icon: '✉️', label: 'Bigger Sleeves', baseTooltip: 'Expands your sleeve to hold a second hidden card.' },
-  rake:             { icon: '🪣', label: 'Rake',          baseTooltip: 'Secretly takes 5% of every pot you are in.' },
-  fourLeafClover:   { icon: '🍀', label: '4-Leaf Clover', baseTooltip: 'Permanently grants +7 luck.' },
-  fiveLeafClover:   { icon: '🌟', label: '5-Leaf Clover', baseTooltip: 'Locks your luck stat to 77 forever. Cigarettes and whiskey have no further effect.' },
-  cigarette:        { icon: '🚬', label: 'Cigarette',     baseTooltip: '+5 luck buff active. Expires after {n} hand(s).' },
-  whiskey:          { icon: '🥃', label: 'Whiskey',       baseTooltip: '+10 luck buff active. Expires after {n} hand(s).' },
+  cardSleeveUnlock:   { icon: '🃏', label: 'Big Sleeves',       baseTooltip: 'Lets you hide one card in your sleeve to swap with a hole card.' },
+  sleeveExtender:     { icon: '✉️', label: 'Bigger Sleeves',    baseTooltip: 'Expands your sleeve to hold a second hidden card.' },
+  rake:               { icon: '🪣', label: 'Rake',              baseTooltip: 'Secretly takes 5% of every pot you are in.' },
+  fourLeafClover:     { icon: '🍀', label: '4-Leaf Clover',     baseTooltip: 'Permanently grants +7 luck.' },
+  fiveLeafClover:     { icon: '🌟', label: '5-Leaf Clover',     baseTooltip: 'Locks your luck stat to 77 forever. Cigarettes and whiskey have no further effect.' },
+  cigarette:          { icon: '🚬', label: 'Cigarette',         baseTooltip: '+5 luck buff active. Expires after {n} hand(s).' },
+  whiskey:            { icon: '🥃', label: 'Whiskey',           baseTooltip: '+10 luck buff active. Expires after {n} hand(s).' },
+  heartOfHearts:      { icon: '❤️', label: 'Heart of Hearts',   baseTooltip: 'All hole cards become hearts when drawn.' },
+  spadeOfSpades:      { icon: '♠️', label: 'Spade of Spades',   baseTooltip: 'Earn bonus per spade drawn. Grows by $5 each win.' },
+  pairOfPairs:        { icon: '🎴', label: 'Pair of Pairs',     baseTooltip: 'Hole cards always form a pair.' },
+  improvedPairOfPairs:{ icon: '🎴', label: 'Improved Pair',     baseTooltip: 'Uses the higher-ranked card for your pair.' },
 };
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -65,6 +73,7 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
     holeCards,
     bonds, stockOptions,
     luckBuffs,
+    spadeOfSpadesBonus,
     useItem, useXRay, useHiddenCamera, shootPlayer, cashOutBond, cashOutStockOption,
   } = useGame();
 
@@ -118,8 +127,16 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
       if (buff.amount === 5)  e.push({ id: `cig-${i}`,   kind: 'cigarette', buff });
       if (buff.amount === 10) e.push({ id: `whisk-${i}`, kind: 'whiskey',   buff });
     });
+    if (myInventory.includes(ShopItemType.HeartOfHearts))
+      e.push({ id: 'heartOfHearts', kind: 'heartOfHearts' });
+    if (myInventory.includes(ShopItemType.SpadeOfSpades))
+      e.push({ id: 'spadeOfSpades', kind: 'spadeOfSpades' });
+    if (myInventory.includes(ShopItemType.PairOfPairs))
+      e.push({ id: 'pairOfPairs', kind: 'pairOfPairs' });
+    if (myInventory.includes(ShopItemType.ImprovedPairOfPairs))
+      e.push({ id: 'improvedPairOfPairs', kind: 'improvedPairOfPairs' });
     return e;
-  }, [myInventory, luckBuffs]);
+  }, [myInventory, luckBuffs, spadeOfSpadesBonus]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const opponents = useMemo(
@@ -314,7 +331,8 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
     const tooltip = handsLeft !== null
       ? base.baseTooltip.replace('{n}', String(handsLeft))
       : base.baseTooltip;
-    const extra = handsLeft !== null ? ` (${handsLeft}h)` : '';
+    let extra = handsLeft !== null ? ` (${handsLeft}h)` : '';
+    if (entry.kind === 'spadeOfSpades') extra = ` ($${spadeOfSpadesBonus}/♠)`;
     return (
       <div className="item-bag-cell-content item-bag-passive" title={tooltip}>
         <span className="item-bag-icon">{base.icon}</span>

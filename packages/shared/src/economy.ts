@@ -17,6 +17,10 @@ export enum ShopItemType {
   HiddenCamera = 42,
   Bond = 50,
   StockOption = 51,
+  HeartOfHearts = 60,
+  SpadeOfSpades = 61,
+  PairOfPairs = 62,
+  ImprovedPairOfPairs = 63,
 }
 
 export enum UseItemType {
@@ -66,12 +70,20 @@ export interface PlayerPrivateState {
   hasFourLeafClover: boolean;
   hasFiveLeafClover: boolean;
   unlockedShopSlots: number; // How many shop slots unlocked this visit (default 1, max 3)
+  hasHeartOfHearts: boolean;
+  hasSpadeOfSpades: boolean;
+  spadeOfSpadesBonus: number; // per-spade payout, starts at 5, +5 each hand won
+  hasPairOfPairs: boolean;
+  hasImprovedPairOfPairs: boolean;
+  hasWonWithOnePair: boolean; // unlock flag for PairOfPairs shop entry
 }
 
 export enum ShopItemRarity {
-  Common = 'common',
-  Uncommon = 'uncommon',
-  Rare = 'rare',
+  Copper = 'copper',
+  Bronze = 'bronze',
+  Silver = 'silver',
+  Gold = 'gold',
+  Unique = 'unique',
 }
 
 export interface ShopSlotItem {
@@ -86,26 +98,30 @@ export interface ShopSlotItem {
 
 /** Canonical rarity for every purchasable item. Drives both the displayed rarity badge and shop spawn weights. */
 export const ITEM_RARITY_MAP: Record<ShopItemType, ShopItemRarity> = {
-  [ShopItemType.None]:             ShopItemRarity.Common,
-  [ShopItemType.Cigarette]:        ShopItemRarity.Common,
-  [ShopItemType.Whiskey]:          ShopItemRarity.Common,
-  [ShopItemType.FourLeafClover]:   ShopItemRarity.Uncommon,
-  [ShopItemType.FiveLeafClover]:   ShopItemRarity.Rare,
-  [ShopItemType.Gun]:              ShopItemRarity.Rare,
-  [ShopItemType.Bullet]:           ShopItemRarity.Common,
-  [ShopItemType.CardSleeveUnlock]: ShopItemRarity.Uncommon,
-  [ShopItemType.ExtraCard]:        ShopItemRarity.Common,
-  [ShopItemType.Joker]:            ShopItemRarity.Rare,
-  [ShopItemType.SleeveExtender]:   ShopItemRarity.Rare,
-  [ShopItemType.XRayGoggles]:      ShopItemRarity.Common,
-  [ShopItemType.Rake]:             ShopItemRarity.Rare,
-  [ShopItemType.HiddenCamera]:     ShopItemRarity.Uncommon,
-  [ShopItemType.Bond]:             ShopItemRarity.Common,
-  [ShopItemType.StockOption]:      ShopItemRarity.Uncommon,
+  [ShopItemType.None]:                ShopItemRarity.Copper,
+  [ShopItemType.Cigarette]:           ShopItemRarity.Copper,
+  [ShopItemType.Whiskey]:             ShopItemRarity.Bronze,
+  [ShopItemType.FourLeafClover]:      ShopItemRarity.Silver,
+  [ShopItemType.FiveLeafClover]:      ShopItemRarity.Gold,
+  [ShopItemType.Gun]:                 ShopItemRarity.Silver,
+  [ShopItemType.Bullet]:              ShopItemRarity.Copper,
+  [ShopItemType.CardSleeveUnlock]:    ShopItemRarity.Silver,
+  [ShopItemType.ExtraCard]:           ShopItemRarity.Copper,
+  [ShopItemType.Joker]:               ShopItemRarity.Silver,
+  [ShopItemType.SleeveExtender]:      ShopItemRarity.Gold,
+  [ShopItemType.XRayGoggles]:         ShopItemRarity.Copper,
+  [ShopItemType.Rake]:                ShopItemRarity.Silver,
+  [ShopItemType.HiddenCamera]:        ShopItemRarity.Bronze,
+  [ShopItemType.Bond]:                ShopItemRarity.Copper,
+  [ShopItemType.StockOption]:         ShopItemRarity.Copper,
+  [ShopItemType.HeartOfHearts]:       ShopItemRarity.Bronze,
+  [ShopItemType.SpadeOfSpades]:       ShopItemRarity.Bronze,
+  [ShopItemType.PairOfPairs]:         ShopItemRarity.Silver,
+  [ShopItemType.ImprovedPairOfPairs]: ShopItemRarity.Gold,
 };
 
 export function getItemRarity(type: ShopItemType): ShopItemRarity {
-  return ITEM_RARITY_MAP[type] ?? ShopItemRarity.Common;
+  return ITEM_RARITY_MAP[type] ?? ShopItemRarity.Copper;
 }
 
 /**
@@ -117,9 +133,11 @@ export function getItemRarity(type: ShopItemType): ShopItemRarity {
  */
 export function getItemShopWeight(type: ShopItemType): number {
   switch (getItemRarity(type)) {
-    case ShopItemRarity.Rare:     return 1;
-    case ShopItemRarity.Uncommon: return 4;
-    case ShopItemRarity.Common:   return 6;
+    case ShopItemRarity.Unique: return 0;
+    case ShopItemRarity.Gold:   return 1;
+    case ShopItemRarity.Silver: return 3;
+    case ShopItemRarity.Bronze: return 6;
+    case ShopItemRarity.Copper: return 12;
   }
 }
 
@@ -145,8 +163,12 @@ export const ITEM_IS_ACTIVE: Record<ShopItemType, boolean> = {
   [ShopItemType.XRayGoggles]:      true,
   [ShopItemType.Rake]:             false,
   [ShopItemType.HiddenCamera]:     true,
-  [ShopItemType.Bond]:             true,
-  [ShopItemType.StockOption]:      true,
+  [ShopItemType.Bond]:                true,
+  [ShopItemType.StockOption]:         true,
+  [ShopItemType.HeartOfHearts]:       false,
+  [ShopItemType.SpadeOfSpades]:       false,
+  [ShopItemType.PairOfPairs]:         false,
+  [ShopItemType.ImprovedPairOfPairs]: false,
 };
 
 export function isItemActive(type: ShopItemType): boolean {
@@ -157,10 +179,10 @@ export function isItemActive(type: ShopItemType): boolean {
 export const ShopCatalog: Record<ShopItemType, number> = {
   [ShopItemType.None]:             Infinity,
   [ShopItemType.Cigarette]:        25,
-  [ShopItemType.Whiskey]:          30,
+  [ShopItemType.Whiskey]:          50,
   [ShopItemType.FourLeafClover]:   77,
   [ShopItemType.FiveLeafClover]:   333,
-  [ShopItemType.Gun]:              400,
+  [ShopItemType.Gun]:              250,
   [ShopItemType.Bullet]:           50,
   [ShopItemType.CardSleeveUnlock]: 200,
   [ShopItemType.ExtraCard]:        0,
@@ -169,8 +191,12 @@ export const ShopCatalog: Record<ShopItemType, number> = {
   [ShopItemType.XRayGoggles]:      80,
   [ShopItemType.Rake]:             200,
   [ShopItemType.HiddenCamera]:     150,
-  [ShopItemType.Bond]:             150,
-  [ShopItemType.StockOption]:      100,
+  [ShopItemType.Bond]:                150,
+  [ShopItemType.StockOption]:         100,
+  [ShopItemType.HeartOfHearts]:       90,
+  [ShopItemType.SpadeOfSpades]:       80,
+  [ShopItemType.PairOfPairs]:         100,
+  [ShopItemType.ImprovedPairOfPairs]: 5,
 };
 
 export function getPrice(item: ShopItemType): number {
@@ -194,7 +220,7 @@ export function getShopItemInfo(type: ShopItemType): { name: string; description
   const info: Record<ShopItemType, { name: string; description: string }> = {
     [ShopItemType.None]: { name: '', description: '' },
     [ShopItemType.Cigarette]: { name: 'Cigarette', description: '+5 luck for 5 hands' },
-    [ShopItemType.Whiskey]: { name: 'Whiskey', description: '+10 luck for 3 hands' },
+    [ShopItemType.Whiskey]: { name: 'Whiskey', description: '+10 luck for 5 hands' },
     [ShopItemType.FourLeafClover]: { name: '4 Leaf Clover', description: 'Permanently +7 luck (one-time)' },
     [ShopItemType.FiveLeafClover]: { name: '5 Leaf Clover', description: 'Permanently gain +70 luck. Cigarettes and whiskey have no further effect.' },
     [ShopItemType.Gun]: { name: 'Gun', description: 'For use on dirty cheaters' },
@@ -208,12 +234,19 @@ export function getShopItemInfo(type: ShopItemType): { name: string; description
     [ShopItemType.HiddenCamera]: { name: 'Hidden Camera', description: 'See one of an opponent\'s hole cards (+3 charges)' },
     [ShopItemType.Bond]: { name: 'Bond', description: 'Invest at a random price. Value grows 25%/hand up to $1,000.' },
     [ShopItemType.StockOption]: { name: 'Stock Option', description: 'Invest at a random price. After 3 hands: 1/3 chance for 5x return.' },
+    [ShopItemType.HeartOfHearts]:       { name: 'Heart of Hearts',        description: 'All hole cards become hearts on draw (applied after luck).' },
+    [ShopItemType.SpadeOfSpades]:       { name: 'Spade of Spades',        description: 'Earn bonus per spade drawn (your cards + board). Grows by $5 each hand you win.' },
+    [ShopItemType.PairOfPairs]:         { name: 'Pair of Pairs',          description: 'Your hole cards always form a pair (applied after luck).' },
+    [ShopItemType.ImprovedPairOfPairs]: { name: 'Improved Pair of Pairs', description: 'Makes Pair of Pairs better — uses the higher-ranked card.' },
   };
   return info[type];
 }
 
-export function getEligibleShopItems(state: PlayerPrivateState): ShopItemType[] {
+export function getEligibleShopItems(state: PlayerPrivateState, ownedUniqueItems: Set<ShopItemType> = new Set()): ShopItemType[] {
   const items: ShopItemType[] = [];
+
+  // Helper: suppress unique items already owned by any player
+  const unique = (type: ShopItemType) => getItemRarity(type) !== ShopItemRarity.Unique || !ownedUniqueItems.has(type);
 
   // One-time unlocks
   if (!state.hasCardSleeveUnlock) items.push(ShopItemType.CardSleeveUnlock);
@@ -250,7 +283,15 @@ export function getEligibleShopItems(state: PlayerPrivateState): ShopItemType[] 
   if (state.bonds.length === 0) items.push(ShopItemType.Bond);
   if (state.stockOptions.length === 0) items.push(ShopItemType.StockOption);
 
-  return items;
+  // Suit passives — one-time purchases
+  if (!state.hasHeartOfHearts) items.push(ShopItemType.HeartOfHearts);
+  if (!state.hasSpadeOfSpades) items.push(ShopItemType.SpadeOfSpades);
+
+  // Pair mechanics — unlock gated
+  if (state.hasWonWithOnePair && !state.hasPairOfPairs) items.push(ShopItemType.PairOfPairs);
+  if (state.hasPairOfPairs && !state.hasImprovedPairOfPairs) items.push(ShopItemType.ImprovedPairOfPairs);
+
+  return items.filter(unique);
 }
 
 export function getTotalLuck(state: PlayerPrivateState): number {

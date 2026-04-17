@@ -331,6 +331,18 @@ export class GameManager {
         case ShopItemType.Bond:
           ps.bonds.push({ roundsHeld: 0, purchasePrice: 50, currentValue: 50 });
           break;
+        case ShopItemType.HeartOfHearts:
+          ps.hasHeartOfHearts = true;
+          break;
+        case ShopItemType.SpadeOfSpades:
+          ps.hasSpadeOfSpades = true;
+          break;
+        case ShopItemType.PairOfPairs:
+          ps.hasPairOfPairs = true;
+          break;
+        case ShopItemType.ImprovedPairOfPairs:
+          ps.hasImprovedPairOfPairs = true;
+          break;
         // ExtraCard, Joker, StockOption require card-selection UI — skip for starting items
         default:
           break;
@@ -398,6 +410,12 @@ export class GameManager {
       hasFourLeafClover: false,
       hasFiveLeafClover: false,
       unlockedShopSlots: 1,
+      hasHeartOfHearts: false,
+      hasSpadeOfSpades: false,
+      spadeOfSpadesBonus: 5,
+      hasPairOfPairs: false,
+      hasImprovedPairOfPairs: false,
+      hasWonWithOnePair: false,
     });
 
     return playerId;
@@ -469,6 +487,12 @@ export class GameManager {
       hasFourLeafClover: false,
       hasFiveLeafClover: false,
       unlockedShopSlots: 1,
+      hasHeartOfHearts: false,
+      hasSpadeOfSpades: false,
+      spadeOfSpadesBonus: 5,
+      hasPairOfPairs: false,
+      hasImprovedPairOfPairs: false,
+      hasWonWithOnePair: false,
     });
 
     // Shuffle profiles and pick 3 (Fisher-Yates)
@@ -518,6 +542,12 @@ export class GameManager {
         hasFourLeafClover: false,
         hasFiveLeafClover: false,
         unlockedShopSlots: 1,
+        hasHeartOfHearts: false,
+        hasSpadeOfSpades: false,
+        spadeOfSpadesBonus: 5,
+        hasPairOfPairs: false,
+        hasImprovedPairOfPairs: false,
+        hasWonWithOnePair: false,
       });
 
       this.botProfiles.set(botId, profile);
@@ -541,6 +571,13 @@ export class GameManager {
   }
 
   startHand(): void {
+    // Eliminate players who can't meet the big blind before the hand begins
+    for (const player of this.gameState.players) {
+      if (player.isSeated && !player.isEliminated && player.stack < this.bigBlind) {
+        player.isEliminated = true;
+      }
+    }
+
     // Reset player states for new hand
     for (const player of this.gameState.players) {
       player.committedThisRound = 0;
@@ -688,6 +725,7 @@ export class GameManager {
           const actualAmount = Math.min(amountToCall, player.stack);
           player.stack -= actualAmount;
           player.committedThisRound += actualAmount;
+          player.contributedThisHand += actualAmount;
           this.gameState.pot += actualAmount;
           player.lastAction = { type: PokerActionType.Call, amount: actualAmount };
 
@@ -704,6 +742,7 @@ export class GameManager {
         if (raiseAmount > 0 && raiseAmount <= player.stack) {
           player.stack -= raiseAmount;
           player.committedThisRound += raiseAmount;
+          player.contributedThisHand += raiseAmount;
           this.gameState.pot += raiseAmount;
           this.gameState.currentBetToMatch = action.raiseToAmount || 0;
           this.lastRaiserId = playerId;
@@ -947,7 +986,7 @@ export class GameManager {
       const cost = getPrice(ShopItemType.Whiskey);
       if (player.stack < cost) return false;
       player.stack -= cost;
-      privateState.luckBuffs.push({ amount: 10, turnsRemaining: 3 });
+      privateState.luckBuffs.push({ amount: 10, turnsRemaining: 5 });
       return true;
     }
 
@@ -1013,6 +1052,50 @@ export class GameManager {
         return true;
       }
       return false;
+    }
+
+    // Handle HeartOfHearts
+    if (itemType === ShopItemType.HeartOfHearts) {
+      if (privateState.hasHeartOfHearts) return false;
+      const cost = getPrice(ShopItemType.HeartOfHearts);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.hasHeartOfHearts = true;
+      player.inventory.push(ShopItemType.HeartOfHearts);
+      return true;
+    }
+
+    // Handle SpadeOfSpades
+    if (itemType === ShopItemType.SpadeOfSpades) {
+      if (privateState.hasSpadeOfSpades) return false;
+      const cost = getPrice(ShopItemType.SpadeOfSpades);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.hasSpadeOfSpades = true;
+      player.inventory.push(ShopItemType.SpadeOfSpades);
+      return true;
+    }
+
+    // Handle PairOfPairs
+    if (itemType === ShopItemType.PairOfPairs) {
+      if (privateState.hasPairOfPairs) return false;
+      const cost = getPrice(ShopItemType.PairOfPairs);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.hasPairOfPairs = true;
+      player.inventory.push(ShopItemType.PairOfPairs);
+      return true;
+    }
+
+    // Handle ImprovedPairOfPairs
+    if (itemType === ShopItemType.ImprovedPairOfPairs) {
+      if (!privateState.hasPairOfPairs || privateState.hasImprovedPairOfPairs) return false;
+      const cost = getPrice(ShopItemType.ImprovedPairOfPairs);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.hasImprovedPairOfPairs = true;
+      player.inventory.push(ShopItemType.ImprovedPairOfPairs);
+      return true;
     }
 
     // Default existing items (Item1, Item2, Item3)
@@ -1225,7 +1308,17 @@ export class GameManager {
     const privateState = this.playerPrivateState.get(playerId);
     if (!privateState) return [];
 
-    const eligible = getEligibleShopItems(privateState);
+    // Build the set of unique items already owned by any player
+    const ownedUniqueItems = new Set<ShopItemType>();
+    for (const player of this.gameState.players) {
+      for (const itemType of player.inventory) {
+        if (getItemRarity(itemType as ShopItemType) === ShopItemRarity.Unique) {
+          ownedUniqueItems.add(itemType as ShopItemType);
+        }
+      }
+    }
+
+    const eligible = getEligibleShopItems(privateState, ownedUniqueItems);
 
     // Build weighted pool using shared weight map
     let pool: ShopItemType[] = [];
@@ -1269,9 +1362,14 @@ export class GameManager {
         if (card) {
           slot.previewCard = card;
           slot.price = getCardPrice(card);
-          // Aces are uncommon; all other ranks are common
-          slot.rarity = card.rank === Rank.Ace ? ShopItemRarity.Uncommon : ShopItemRarity.Common;
+          // Aces are bronze; all other ranks are copper
+          slot.rarity = card.rank === Rank.Ace ? ShopItemRarity.Bronze : ShopItemRarity.Copper;
         }
+      }
+
+      // Dynamic description for Spade of Spades — show current per-spade payout
+      if (type === ShopItemType.SpadeOfSpades) {
+        slot.description = `Earn $${privateState.spadeOfSpadesBonus} per spade drawn (your cards + board). Grows by $5 each hand you win.`;
       }
 
       // Dynamic random pricing for Bond and StockOption
@@ -1344,7 +1442,7 @@ export class GameManager {
 
     extraCardSlot.previewCard = card;
     extraCardSlot.price = getCardPrice(card);
-    extraCardSlot.rarity = card.rank === Rank.Ace ? ShopItemRarity.Uncommon : ShopItemRarity.Common;
+    extraCardSlot.rarity = card.rank === Rank.Ace ? ShopItemRarity.Bronze : ShopItemRarity.Copper;
     return extraCardSlot;
   }
 
@@ -1478,6 +1576,24 @@ export class GameManager {
           cardB = this.applyLuckToHoleCard(cardB, cardA, luck);
         }
 
+        // PairOfPairs — applied after luck
+        if (ps?.hasPairOfPairs) {
+          const allSuits: Suit[] = [Suit.Clubs, Suit.Diamonds, Suit.Hearts, Suit.Spades];
+          if (ps.hasImprovedPairOfPairs) {
+            const highRank = cardA.rank >= cardB.rank ? cardA.rank : cardB.rank;
+            cardA = { rank: highRank, suit: allSuits[Math.floor(Math.random() * 4)] };
+            cardB = { rank: highRank, suit: allSuits[Math.floor(Math.random() * 4)] };
+          } else {
+            cardB = { rank: cardA.rank, suit: allSuits[Math.floor(Math.random() * 4)] };
+          }
+        }
+
+        // HeartOfHearts — overrides suit to Hearts, applied last
+        if (ps?.hasHeartOfHearts) {
+          cardA = { ...cardA, suit: Suit.Hearts };
+          cardB = { ...cardB, suit: Suit.Hearts };
+        }
+
         this.holeCards.set(player.id, [cardA, cardB]);
         player.isInHand = true;
       }
@@ -1542,15 +1658,21 @@ export class GameManager {
     const bbPlayer = this.gameState.players.find(p => p.id === bigBlindPlayer);
 
     if (sbPlayer) {
-      sbPlayer.stack -= smallBlind;
-      sbPlayer.committedThisRound = smallBlind;
-      this.gameState.pot += smallBlind;
+      const sbAmount = Math.min(smallBlind, sbPlayer.stack);
+      sbPlayer.stack -= sbAmount;
+      sbPlayer.committedThisRound = sbAmount;
+      sbPlayer.contributedThisHand += sbAmount;
+      this.gameState.pot += sbAmount;
+      if (sbPlayer.stack === 0) sbPlayer.isAllIn = true;
     }
 
     if (bbPlayer) {
-      bbPlayer.stack -= bigBlind;
-      bbPlayer.committedThisRound = bigBlind;
-      this.gameState.pot += bigBlind;
+      const bbAmount = Math.min(bigBlind, bbPlayer.stack);
+      bbPlayer.stack -= bbAmount;
+      bbPlayer.committedThisRound = bbAmount;
+      bbPlayer.contributedThisHand += bbAmount;
+      this.gameState.pot += bbAmount;
+      if (bbPlayer.stack === 0) bbPlayer.isAllIn = true;
     }
 
     this.gameState.currentBetToMatch = bigBlind;
@@ -1650,15 +1772,17 @@ export class GameManager {
   }
 
   private getNextActivePlayer(fromPlayerId: number): number {
-    const activePlayers = this.gameState.players
-      .filter(p => p.isSeated && p.isInHand && !p.hasFolded)
-      .map(p => p.id);
+    // Use the full in-hand list (including folded) to preserve seating order,
+    // then step forward to find the next non-folded player.
+    const inHand = this.gameState.players.filter(p => p.isSeated && p.isInHand);
+    if (inHand.length === 0) return 0;
 
-    if (activePlayers.length === 0) return 0;
-
-    const currentIndex = activePlayers.indexOf(fromPlayerId);
-    const nextIndex = (currentIndex + 1) % activePlayers.length;
-    return activePlayers[nextIndex];
+    const fromIdx = inHand.findIndex(p => p.id === fromPlayerId);
+    for (let i = 1; i <= inHand.length; i++) {
+      const candidate = inHand[(fromIdx + i) % inHand.length];
+      if (!candidate.hasFolded) return candidate.id;
+    }
+    return 0;
   }
 
   /** Like getNextActivePlayer but uses the full players list order, for preflop seat rotation. Skips eliminated players. */
@@ -1676,50 +1800,76 @@ export class GameManager {
 
     if (activePlayers.length === 0) return;
 
-    // Find best hand(s) - track all players with the same best score
-    let bestScore = -1;
-    const playerScores: { player: PlayerPublicState; score: number }[] = [];
-
+    // Score all non-folded players' hands
+    const playerScores: { player: PlayerPublicState; score: number; ranking: HandRanking }[] = [];
     for (const player of activePlayers) {
       const hole = this.holeCards.get(player.id);
       if (hole) {
-        // Use joker-aware evaluation if any hole card is a joker
         const hasJoker = hole.some(c => isJokerCard(c));
         const handValue = hasJoker
           ? evaluateBestHandWithJokers([hole[0], hole[1]], this.gameState.board)
           : evaluateBestHand([hole[0], hole[1]], this.gameState.board);
-        playerScores.push({ player, score: handValue.score });
-        if (handValue.score > bestScore) {
-          bestScore = handValue.score;
-        }
+        playerScores.push({ player, score: handValue.score, ranking: handValue.ranking });
       }
     }
 
-    // Find all winners (handles ties)
-    const winners = playerScores.filter(ps => ps.score === bestScore).map(ps => ps.player);
-    this.winnerIds = winners.map(w => w.id);
-    this.winnerId = winners[0].id; // Display first winner
+    // ── Side pot distribution ──────────────────────────────────────────────
+    // Each all-in player can only win chips from players they covered.
+    // computeSidePots() builds ordered side pots from contributedThisHand values.
+    const sidePots = this.computeSidePots();
+    const mainPotWinnerIds: number[] = [];
 
-    // Apply rake before pot distribution
-    let remainingPot = this.gameState.pot;
-    for (const player of this.gameState.players) {
-      const ps = this.playerPrivateState.get(player.id);
-      if (ps?.hasRake && player.isInHand && player.stack > 0) {
-        const rakeAmount = Math.floor(this.gameState.pot * 0.05);
-        if (rakeAmount > 0) {
-          player.stack += rakeAmount;
-          remainingPot -= rakeAmount;
+    for (let si = 0; si < sidePots.length; si++) {
+      const sidePot = sidePots[si];
+
+      const eligibleScores = playerScores.filter(ps => sidePot.eligibleIds.has(ps.player.id));
+      if (eligibleScores.length === 0) continue;
+
+      // Apply rake (per eligible player who owns one) to this side pot
+      let potAmount = sidePot.amount;
+      for (const player of this.gameState.players) {
+        const ps = this.playerPrivateState.get(player.id);
+        if (ps?.hasRake && sidePot.eligibleIds.has(player.id)) {
+          const rakeAmount = Math.floor(potAmount * 0.05);
+          if (rakeAmount > 0) {
+            player.stack += rakeAmount;
+            potAmount -= rakeAmount;
+          }
         }
+      }
+
+      // Best hand among players eligible for this side pot
+      const bestScore = Math.max(...eligibleScores.map(e => e.score));
+      const winners = eligibleScores.filter(e => e.score === bestScore).map(e => e.player);
+
+      // Split this side pot among its winners
+      const share = Math.floor(potAmount / winners.length);
+      const rem = potAmount % winners.length;
+      for (let i = 0; i < winners.length; i++) {
+        winners[i].stack += share + (i === 0 ? rem : 0);
+      }
+
+      // Track win-with-one-pair unlock for PairOfPairs shop entry
+      for (const entry of eligibleScores.filter(e => e.score === bestScore)) {
+        const ps = this.playerPrivateState.get(entry.player.id);
+        if (ps && entry.ranking === HandRanking.OnePair) ps.hasWonWithOnePair = true;
+      }
+
+      // The last (largest) side pot determines the displayed winner
+      if (si === sidePots.length - 1) {
+        for (const w of winners) mainPotWinnerIds.push(w.id);
       }
     }
 
-    // Split remaining pot among all winners
-    const potShare = Math.floor(remainingPot / winners.length);
-    const remainder = remainingPot % winners.length;
-    
-    for (let i = 0; i < winners.length; i++) {
-      // Give remainder to first winner if pot doesn't divide evenly
-      winners[i].stack += potShare + (i === 0 ? remainder : 0);
+    // Fall back to first active player if side pots were empty (shouldn't happen)
+    this.winnerIds = mainPotWinnerIds.length > 0 ? mainPotWinnerIds : [activePlayers[0].id];
+    this.winnerId = this.winnerIds[0];
+
+    // Apply Spade of Spades bonuses and increment winner's bonus
+    this.applySpadeOfSpadesBonuses();
+    for (const winnerId of this.winnerIds) {
+      const ps = this.playerPrivateState.get(winnerId);
+      if (ps?.hasSpadeOfSpades) ps.spadeOfSpadesBonus += 5;
     }
 
     // Eliminate players who are now broke
@@ -1729,8 +1879,56 @@ export class GameManager {
       }
     }
 
-    // Transition to showdown phase
     this.gameState.phase = HandPhase.Showdown;
+  }
+
+  /**
+   * Builds side pots from players' total contributions this hand.
+   * Each side pot covers one contribution "level" and lists only the
+   * non-folded players who are eligible to win it.
+   *
+   * Example: A=100, B=50 (all-in), C=100, D=30 (folded)
+   *   Level 30 → pot 120, eligible {A,B,C,D→excluded because folded}
+   *   Level 50 → pot  60, eligible {A,B,C}
+   *   Level 100→ pot 100, eligible {A,C}
+   */
+  private computeSidePots(): { amount: number; eligibleIds: Set<number> }[] {
+    // All players who put chips in this hand
+    const contributors = this.gameState.players.filter(p => p.isInHand);
+    // Only non-folded players can win
+    const eligible = contributors.filter(p => !p.hasFolded);
+
+    // Unique, ascending contribution levels
+    const levels = [...new Set(contributors.map(p => p.contributedThisHand))]
+      .filter(l => l > 0)
+      .sort((a, b) => a - b);
+
+    if (levels.length === 0) return [];
+
+    const sidePots: { amount: number; eligibleIds: Set<number> }[] = [];
+    let prevLevel = 0;
+
+    for (const level of levels) {
+      const height = level - prevLevel;
+      if (height <= 0) continue;
+
+      // Each contributor puts at most `height` chips into this layer
+      let amount = 0;
+      for (const p of contributors) {
+        amount += Math.min(p.contributedThisHand, level) - prevLevel;
+      }
+
+      // Eligible winners are non-folded players who contributed at least up to this level
+      const eligibleIds = new Set(eligible.filter(p => p.contributedThisHand >= level).map(p => p.id));
+
+      if (amount > 0) {
+        sidePots.push({ amount, eligibleIds });
+      }
+
+      prevLevel = level;
+    }
+
+    return sidePots;
   }
 
   private handleFoldOutWinner(): void {
@@ -1761,6 +1959,11 @@ export class GameManager {
     this.winnerId = winner.id;
     this.foldedOut = true;
 
+    // Apply Spade of Spades bonuses and increment winner's bonus
+    this.applySpadeOfSpadesBonuses();
+    const winnerPs = this.playerPrivateState.get(winner.id);
+    if (winnerPs?.hasSpadeOfSpades) winnerPs.spadeOfSpadesBonus += 5;
+
     // Eliminate players who are now broke
     for (const player of this.gameState.players) {
       if (player.stack === 0 && !player.isEliminated) {
@@ -1770,5 +1973,18 @@ export class GameManager {
 
     // Transition to showdown phase (will show simplified winner screen)
     this.gameState.phase = HandPhase.Showdown;
+  }
+
+  private applySpadeOfSpadesBonuses(): void {
+    const boardSpades = this.gameState.board.filter(c => c.suit === Suit.Spades).length;
+    for (const player of this.gameState.players) {
+      if (!player.isInHand) continue;
+      const ps = this.playerPrivateState.get(player.id);
+      if (!ps?.hasSpadeOfSpades) continue;
+      const hc = this.holeCards.get(player.id);
+      const holeSpades = hc ? hc.filter(c => c.suit === Suit.Spades).length : 0;
+      const total = holeSpades + boardSpades;
+      if (total > 0) player.stack += ps.spadeOfSpadesBonus * total;
+    }
   }
 }

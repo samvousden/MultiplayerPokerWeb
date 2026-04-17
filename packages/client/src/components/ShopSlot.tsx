@@ -15,9 +15,11 @@ interface ShopSlotProps {
 
 const rarityLabel = (rarity: ShopItemRarity): string => {
   switch (rarity) {
-    case ShopItemRarity.Rare: return 'Rare';
-    case ShopItemRarity.Uncommon: return 'Uncommon';
-    default: return 'Common';
+    case ShopItemRarity.Unique: return 'Unique';
+    case ShopItemRarity.Gold:   return 'Gold';
+    case ShopItemRarity.Silver: return 'Silver';
+    case ShopItemRarity.Bronze: return 'Bronze';
+    default:                    return 'Copper';
   }
 };
 

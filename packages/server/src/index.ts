@@ -368,6 +368,7 @@ io.on('connection', (socket) => {
       stockOptions: ps?.stockOptions ?? [],
       totalLuck: ps ? (ps.permanentLuck + ps.luckBuffs.reduce((s, b) => s + b.amount, 0)) : 0,
       luckBuffs: ps?.luckBuffs ?? [],
+      spadeOfSpadesBonus: ps?.spadeOfSpadesBonus ?? 5,
     });
   });
 

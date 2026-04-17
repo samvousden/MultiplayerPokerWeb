@@ -26,6 +26,7 @@ interface GameContextType {
   stockOptions: StockOptionState[];
   totalLuck: number;
   luckBuffs: LuckBuff[];
+  spadeOfSpadesBonus: number;
   
   // Actions
   joinTable: (playerName: string) => Promise<number | false>;
@@ -69,6 +70,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [stockOptions, setStockOptions] = useState<StockOptionState[]>([]);
   const [totalLuck, setTotalLuck] = useState(0);
   const [luckBuffs, setLuckBuffs] = useState<LuckBuff[]>([]);
+  const [spadeOfSpadesBonus, setSpadeOfSpadesBonus] = useState(5);
 
   const serverUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
@@ -197,6 +199,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setStockOptions([]);
             setTotalLuck(0);
             setLuckBuffs([]);
+            setSpadeOfSpadesBonus(5);
             resolve(pid);
           } else {
             resolve(false);
@@ -302,6 +305,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (response.stockOptions) setStockOptions(response.stockOptions);
         if (response.totalLuck !== undefined) setTotalLuck(response.totalLuck);
         if (response.luckBuffs) setLuckBuffs(response.luckBuffs);
+        if (response.spadeOfSpadesBonus !== undefined) setSpadeOfSpadesBonus(response.spadeOfSpadesBonus);
       }
     });
   }, [socket, playerId]);
@@ -342,6 +346,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setStockOptions([]);
     setTotalLuck(0);
     setLuckBuffs([]);
+    setSpadeOfSpadesBonus(5);
   }, []);
 
   // Refresh sleeve card when player joins or on game state updates
@@ -377,6 +382,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         stockOptions,
         totalLuck,
         luckBuffs,
+        spadeOfSpadesBonus,
         joinTable,
         playVsBots,
         setReady,
