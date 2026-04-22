@@ -122,34 +122,34 @@ export class GameManager {
     const facingRaise = currentBet > playerCommitted;
     const isPreflop = board.length === 0;
 
-    // ── Compute hand strength ──────────────────────────────────────────────
+    // ── Compute hand strength (0-100) ──────────────────────────────────────
     let strength = 20; // default if hole cards unavailable
-    let ranking: HandRanking = HandRanking.HighCard;
 
     if (holeCards) {
-      if (isPreflop) {
-        strength = this.getPreflopStrength(holeCards[0], holeCards[1]);
-      } else {
-        ranking = this.getPostflopRanking(holeCards, board);
-        strength = Math.round((ranking / 9) * 100);
-      }
+      strength = isPreflop
+        ? this.getPreflopStrength(holeCards[0], holeCards[1])
+        : this.getEffectivePostflopStrength(holeCards as [Card, Card], board);
     }
 
     // ── Bluff roll ─────────────────────────────────────────────────────────
     const isBluffing = Math.random() < strategy.bluffFrequency;
     const effectiveStrength = isBluffing ? 100 : strength;
-    const effectiveRanking: HandRanking = isBluffing ? HandRanking.RoyalFlush : ranking;
+
+    // ── Pot-odds adjustment ────────────────────────────────────────────────
+    // Cheap calls lower thresholds (easier to call); expensive bets raise them
+    const callAmount = currentBet - playerCommitted;
+    const potOddsMultiplier = callAmount > 0
+      ? Math.min(1.3, 0.7 + (callAmount / (this.gameState.pot + callAmount)))
+      : 1.0;
 
     // ── Threshold checks ───────────────────────────────────────────────────
-    let canCall: boolean;
-    let shouldRaise: boolean;
-    if (isPreflop) {
-      canCall = effectiveStrength >= strategy.preflopCallMinStrength;
-      shouldRaise = effectiveStrength >= strategy.preflopRaiseMinStrength;
-    } else {
-      canCall = effectiveRanking >= strategy.postflopCallMinRanking;
-      shouldRaise = effectiveRanking >= strategy.postflopRaiseMinRanking;
-    }
+    const rawCallThreshold  = isPreflop ? strategy.preflopCallMinStrength  : strategy.postflopCallMinStrength;
+    const rawRaiseThreshold = isPreflop ? strategy.preflopRaiseMinStrength : strategy.postflopRaiseMinStrength;
+    const adjustedCallThreshold  = Math.round(rawCallThreshold  * potOddsMultiplier);
+    const adjustedRaiseThreshold = Math.round(rawRaiseThreshold * potOddsMultiplier);
+
+    const canCall     = effectiveStrength >= adjustedCallThreshold;
+    const shouldRaise = effectiveStrength >= adjustedRaiseThreshold;
 
     // ── Decision ───────────────────────────────────────────────────────────
     if (facingRaise) {
@@ -245,6 +245,89 @@ export class GameManager {
 
     // Flop: exactly 2 hole + 3 board = 5 cards
     return evaluateFiveCardHand([...holeCards, ...board]).ranking;
+  }
+
+  /**
+   * Evaluates the "free" hand ranking the board provides to every player.
+   * Used to determine how much a bot's hole cards actually improve their hand.
+   */
+  private getBoardBaselineRanking(board: Card[]): HandRanking {
+    if (board.length === 0) return HandRanking.HighCard;
+
+    // Count rank frequencies on the board
+    const rankCounts = new Map<Rank, number>();
+    for (const c of board) {
+      rankCounts.set(c.rank, (rankCounts.get(c.rank) || 0) + 1);
+    }
+    const counts = [...rankCounts.values()].sort((a, b) => b - a);
+    const pairCount = counts.filter(c => c >= 2).length;
+
+    if (counts[0] >= 4) return HandRanking.FourOfAKind;
+    if (counts[0] >= 3 && pairCount >= 2) return HandRanking.FullHouse;
+
+    // Check flush and straight for 5-card boards
+    if (board.length >= 5) {
+      const suitCounts = new Map<Suit, number>();
+      for (const c of board) {
+        suitCounts.set(c.suit, (suitCounts.get(c.suit) || 0) + 1);
+      }
+      const maxSuit = Math.max(...suitCounts.values());
+
+      const uniqueRanks = [...new Set(board.map(c => c.rank))].sort((a, b) => a - b);
+      let hasStraight = false;
+      for (let i = 0; i <= uniqueRanks.length - 5; i++) {
+        if (uniqueRanks[i + 4] - uniqueRanks[i] === 4) { hasStraight = true; break; }
+      }
+      // Wheel: A-2-3-4-5
+      if (uniqueRanks.includes(Rank.Ace) && uniqueRanks.includes(Rank.Two) &&
+          uniqueRanks.includes(Rank.Three) && uniqueRanks.includes(Rank.Four) &&
+          uniqueRanks.includes(Rank.Five)) {
+        hasStraight = true;
+      }
+
+      if (maxSuit >= 5 && hasStraight) return HandRanking.StraightFlush;
+      if (maxSuit >= 5) return HandRanking.Flush;
+      if (hasStraight) return HandRanking.Straight;
+    }
+
+    if (counts[0] >= 3) return HandRanking.ThreeOfAKind;
+    if (pairCount >= 2) return HandRanking.TwoPair;
+    if (pairCount >= 1) return HandRanking.OnePair;
+
+    return HandRanking.HighCard;
+  }
+
+  /**
+   * Returns effective post-flop hand strength (0–100) that accounts for how
+   * much the bot's hole cards improve beyond what the board gives "for free".
+   * Prevents bots from overvaluing hands that merely match the board.
+   */
+  private getEffectivePostflopStrength(holeCards: [Card, Card], board: Card[]): number {
+    // Jokers are always powerful wildcards
+    if (holeCards.some(c => isJokerCard(c))) return 90;
+
+    const playerRanking = this.getPostflopRanking(holeCards, board);
+    const boardBaseline = this.getBoardBaselineRanking(board);
+    const improvement = playerRanking - boardBaseline;
+
+    if (improvement <= 0) {
+      // Hand doesn't improve on the board — assess kicker quality only
+      const hiCard = Math.max(holeCards[0].rank, holeCards[1].rank);
+      const kickerBonus = Math.round(((hiCard - 2) / 12) * 15); // 0–15 based on high card
+      return 10 + kickerBonus; // Range: 10–25
+    }
+
+    // Improvement tiers: maps how many ranking levels above board → base strength
+    const tierBase = [0, 38, 52, 62, 72, 80, 87, 92, 96, 100];
+    const base = tierBase[Math.min(improvement, 9)];
+
+    // Kicker bonus for marginal improvements (1–2 ranks above board)
+    if (improvement <= 2) {
+      const hiCard = Math.max(holeCards[0].rank, holeCards[1].rank);
+      return Math.min(100, base + Math.round(((hiCard - 2) / 12) * 10));
+    }
+
+    return base;
   }
 
   /**

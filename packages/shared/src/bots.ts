@@ -1,19 +1,19 @@
 import { ShopItemType } from './economy.js';
-import { HandRanking } from './handEvaluator.js';
 
 /**
  * Strategy parameters that control a bot's decision-making.
- * All threshold values should be tuned together to create a coherent personality.
+ * All threshold values are 0–100 effective hand strength and should be tuned
+ * together to create a coherent personality.
  */
 export interface BotStrategy {
   /** Minimum preflop hand strength (0–100) required to call a bet */
   preflopCallMinStrength: number;
   /** Minimum preflop hand strength (0–100) required to raise */
   preflopRaiseMinStrength: number;
-  /** Minimum made-hand ranking required to call a post-flop bet */
-  postflopCallMinRanking: HandRanking;
-  /** Minimum made-hand ranking required to raise post-flop */
-  postflopRaiseMinRanking: HandRanking;
+  /** Minimum effective post-flop strength (0–100) required to call; accounts for board texture */
+  postflopCallMinStrength: number;
+  /** Minimum effective post-flop strength (0–100) required to raise; accounts for board texture */
+  postflopRaiseMinStrength: number;
   /** Probability (0–1) of bluff-raising with a weak hand */
   bluffFrequency: number;
   /** Probability (0–1) of folding when facing a raise with a weak hand */
@@ -66,8 +66,8 @@ export const MR_LUCKY: BotProfile = {
   strategy: {
     preflopCallMinStrength: 20,
     preflopRaiseMinStrength: 82,
-    postflopCallMinRanking: HandRanking.HighCard,
-    postflopRaiseMinRanking: HandRanking.ThreeOfAKind,
+    postflopCallMinStrength: 15,
+    postflopRaiseMinStrength: 65,
     bluffFrequency: 0,
     foldToRaiseFrequency: 0.15,
     raiseSizing: 'min',
@@ -85,8 +85,8 @@ export const THE_SHARK: BotProfile = {
   strategy: {
     preflopCallMinStrength: 52,
     preflopRaiseMinStrength: 74,
-    postflopCallMinRanking: HandRanking.OnePair,
-    postflopRaiseMinRanking: HandRanking.TwoPair,
+    postflopCallMinStrength: 35,
+    postflopRaiseMinStrength: 55,
     bluffFrequency: 0.07,
     foldToRaiseFrequency: 0.55,
     raiseSizing: 'large',
@@ -104,8 +104,8 @@ export const LOOSE_LARRY: BotProfile = {
   strategy: {
     preflopCallMinStrength: 10,
     preflopRaiseMinStrength: 44,
-    postflopCallMinRanking: HandRanking.HighCard,
-    postflopRaiseMinRanking: HandRanking.OnePair,
+    postflopCallMinStrength: 12,
+    postflopRaiseMinStrength: 30,
     bluffFrequency: 0.25,
     foldToRaiseFrequency: 0.12,
     raiseSizing: 'pot',
@@ -123,8 +123,8 @@ export const THE_INVESTOR: BotProfile = {
   strategy: {
     preflopCallMinStrength: 30,
     preflopRaiseMinStrength: 65,
-    postflopCallMinRanking: HandRanking.OnePair,
-    postflopRaiseMinRanking: HandRanking.TwoPair,
+    postflopCallMinStrength: 28,
+    postflopRaiseMinStrength: 50,
     bluffFrequency: 0.09,
     foldToRaiseFrequency: 0.33,
     raiseSizing: 'pot',
