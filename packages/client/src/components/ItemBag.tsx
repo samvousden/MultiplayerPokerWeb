@@ -58,6 +58,8 @@ const PASSIVE_BASE_META: Record<PassiveEntry['kind'], { label: string; icon: str
   improvedPairOfPairs:{ icon: '🎴', label: 'Improved Pair',     baseTooltip: 'Uses the higher-ranked card for your pair.' },
 };
 
+const LUCKY_ENOUGH_TOOLTIP = "Makes you look cool. You're already lucky enough.";
+
 // ── Component ────────────────────────────────────────────────────────────────
 interface ItemBagProps {
   section?: 'active' | 'passive';
@@ -72,10 +74,13 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
     sleeveCard, sleeveCard2, sleeveUsedThisHand,
     holeCards,
     bonds, stockOptions,
-    luckBuffs,
+    luckBuffs, totalLuck,
     spadeOfSpadesBonus,
     useItem, useXRay, useHiddenCamera, shootPlayer, cashOutBond, cashOutStockOption,
   } = useGame();
+
+  // A player with a 5-leaf clover has their luck locked at 77
+  const hasFiveLeafClover = totalLuck === 77;
 
   // Which active slot is in "pick-a-target" mode
   const [targetingId, setTargetingId] = useState<string | null>(null);
@@ -127,6 +132,20 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
       if (buff.amount === 5)  e.push({ id: `cig-${i}`,   kind: 'cigarette', buff });
       if (buff.amount === 10) e.push({ id: `whisk-${i}`, kind: 'whiskey',   buff });
     });
+    // When the player has a 5-leaf clover, show cosmetic cigarette/whiskey from inventory
+    // (only if not already shown as an active buff above)
+    if (hasFiveLeafClover) {
+      const activeCigCount = luckBuffs.filter(b => b.amount === 5).length;
+      const inventoryCigCount = myInventory.filter(t => t === ShopItemType.Cigarette).length;
+      for (let i = activeCigCount; i < inventoryCigCount; i++) {
+        e.push({ id: `cig-cosmetic-${i}`, kind: 'cigarette', buff: { amount: 5, turnsRemaining: 0 } });
+      }
+      const activeWhiskeyCount = luckBuffs.filter(b => b.amount === 10).length;
+      const inventoryWhiskeyCount = myInventory.filter(t => t === ShopItemType.Whiskey).length;
+      for (let i = activeWhiskeyCount; i < inventoryWhiskeyCount; i++) {
+        e.push({ id: `whisk-cosmetic-${i}`, kind: 'whiskey', buff: { amount: 10, turnsRemaining: 0 } });
+      }
+    }
     if (myInventory.includes(ShopItemType.HeartOfHearts))
       e.push({ id: 'heartOfHearts', kind: 'heartOfHearts' });
     if (myInventory.includes(ShopItemType.SpadeOfSpades))
@@ -136,7 +155,7 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
     if (myInventory.includes(ShopItemType.ImprovedPairOfPairs))
       e.push({ id: 'improvedPairOfPairs', kind: 'improvedPairOfPairs' });
     return e;
-  }, [myInventory, luckBuffs, spadeOfSpadesBonus]);
+  }, [myInventory, luckBuffs, spadeOfSpadesBonus, hasFiveLeafClover]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const opponents = useMemo(
@@ -328,10 +347,16 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
   function renderPassiveSlot(entry: PassiveEntry) {
     const base = PASSIVE_BASE_META[entry.kind];
     const handsLeft = (entry.kind === 'cigarette' || entry.kind === 'whiskey') ? entry.buff.turnsRemaining : null;
-    const tooltip = handsLeft !== null
-      ? base.baseTooltip.replace('{n}', String(handsLeft))
-      : base.baseTooltip;
-    let extra = handsLeft !== null ? ` (${handsLeft}h)` : '';
+    // Luck items that do nothing for 5-leaf clover owners get a special tooltip
+    const isLuckItem = entry.kind === 'cigarette' || entry.kind === 'whiskey' ||
+                       entry.kind === 'fourLeafClover' || entry.kind === 'fiveLeafClover';
+    const cosmeticOnly = hasFiveLeafClover && isLuckItem && entry.kind !== 'fiveLeafClover';
+    const tooltip = cosmeticOnly
+      ? LUCKY_ENOUGH_TOOLTIP
+      : handsLeft !== null
+        ? base.baseTooltip.replace('{n}', String(handsLeft))
+        : base.baseTooltip;
+    let extra = !cosmeticOnly && handsLeft !== null && handsLeft > 0 ? ` (${handsLeft}h)` : '';
     if (entry.kind === 'spadeOfSpades') extra = ` ($${spadeOfSpadesBonus}/♠)`;
     return (
       <div className="item-bag-cell-content item-bag-passive" title={tooltip}>

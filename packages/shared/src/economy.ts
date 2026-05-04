@@ -125,11 +125,19 @@ export function getItemRarity(type: ShopItemType): ShopItemRarity {
 }
 
 /**
- * Shop spawn weight derived directly from rarity.
+ * Items that directly affect the luck stat. These receive a spawn weight bonus
+ * for lucky players, and always remain purchasable regardless of 5-leaf clover status.
+ */
+export const LUCK_ITEMS = new Set<ShopItemType>([
+  ShopItemType.Cigarette,
+  ShopItemType.Whiskey,
+  ShopItemType.FourLeafClover,
+  ShopItemType.FiveLeafClover,
+]);
+
+/**
+ * Base shop spawn weight derived from rarity.
  * To adjust how often an item appears in the shop, change its entry in ITEM_RARITY_MAP.
- *   Rare     → 1  (low spawn chance)
- *   Uncommon → 4
- *   Common   → 6  (high spawn chance)
  */
 export function getItemShopWeight(type: ShopItemType): number {
   switch (getItemRarity(type)) {
@@ -139,6 +147,37 @@ export function getItemShopWeight(type: ShopItemType): number {
     case ShopItemRarity.Bronze: return 10;
     case ShopItemRarity.Copper: return 20;
   }
+}
+
+/**
+ * Returns a luck-adjusted spawn weight for a shop item.
+ *
+ * Two bonuses stack:
+ *  - Rarity bonus: Silver+ items get a multiplier that grows with luck.
+ *    At luck 0 multiplier = 1×; at luck 70+ multiplier = 2× (linear interpolation).
+ *  - Luck-item bonus: luck-affecting items (Cigarette, Whiskey, Clover variants)
+ *    receive an additional flat bonus proportional to luck.
+ *    +1 per 10 points of luck, capped at +10.
+ *
+ * @param type  The shop item type.
+ * @param luck  The player's current total luck score (from getTotalLuck).
+ */
+export function getLuckBoostedWeight(type: ShopItemType, luck: number): number {
+  const base = getItemShopWeight(type);
+  const rarity = getItemRarity(type);
+  const clampedLuck = Math.max(0, Math.min(100, luck));
+
+  // Rarity bonus: Silver and above get boosted proportionally to luck.
+  // Multiplier ranges from 1.0 (luck=0) to 2.0 (luck=70+).
+  let rarityMultiplier = 1.0;
+  if (rarity === ShopItemRarity.Silver || rarity === ShopItemRarity.Gold || rarity === ShopItemRarity.Unique) {
+    rarityMultiplier = 1.0 + Math.min(1.0, clampedLuck / 70);
+  }
+
+  // Luck-item bonus: luck items themselves appear more often for lucky players.
+  const luckItemBonus = LUCK_ITEMS.has(type) ? Math.floor(clampedLuck / 10) : 0;
+
+  return Math.round(base * rarityMultiplier) + luckItemBonus;
 }
 
 /**
@@ -271,13 +310,15 @@ export function getEligibleShopItems(state: PlayerPrivateState, ownedUniqueItems
   items.push(ShopItemType.XRayGoggles);
   items.push(ShopItemType.HiddenCamera);
 
-  // Luck items — cigarette/whiskey blocked if player has 5 Leaf Clover
-  if (!state.hasFiveLeafClover) {
-    items.push(ShopItemType.Cigarette);
-    items.push(ShopItemType.Whiskey);
-  }
+  // Luck items — always available for purchase.
+  // With a 5-leaf clover, cigarettes/whiskey do nothing but are still sold (cosmetic).
+  items.push(ShopItemType.Cigarette);
+  items.push(ShopItemType.Whiskey);
   if (!state.hasFourLeafClover && getTotalLuck(state) >= 5) items.push(ShopItemType.FourLeafClover);
+  // FiveLeafClover: show if player has 4-leaf but not yet 5-leaf, OR if player already has the
+  // 5-leaf (so it stays purchasable as a cosmetic — does nothing but looks cool).
   if (state.hasFourLeafClover && !state.hasFiveLeafClover) items.push(ShopItemType.FiveLeafClover);
+  if (state.hasFiveLeafClover) items.push(ShopItemType.FiveLeafClover);
 
   // Investment items — only 1 of each at a time; repurchasable after cashing out
   if (state.bonds.length === 0) items.push(ShopItemType.Bond);

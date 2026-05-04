@@ -24,6 +24,7 @@ import {
   getEligibleShopItems,
   getItemRarity,
   getItemShopWeight,
+  getLuckBoostedWeight,
   cardToString,
   isJokerCard,
   JOKER_CARD,
@@ -1131,21 +1132,27 @@ export class GameManager {
       return true;
     }
 
-    // Handle Cigarette — +5 luck for 5 hands
+    // Handle Cigarette — +5 luck for 5 hands (cosmetic-only if player has 5-leaf clover)
     if (itemType === ShopItemType.Cigarette) {
       const cost = getPrice(ShopItemType.Cigarette);
       if (player.stack < cost) return false;
       player.stack -= cost;
-      privateState.luckBuffs.push({ amount: 5, turnsRemaining: 5 });
+      player.inventory.push(ShopItemType.Cigarette);
+      if (!privateState.hasFiveLeafClover) {
+        privateState.luckBuffs.push({ amount: 5, turnsRemaining: 5 });
+      }
       return true;
     }
 
-    // Handle Whiskey — +10 luck for 3 hands
+    // Handle Whiskey — +10 luck for 5 hands (cosmetic-only if player has 5-leaf clover)
     if (itemType === ShopItemType.Whiskey) {
       const cost = getPrice(ShopItemType.Whiskey);
       if (player.stack < cost) return false;
       player.stack -= cost;
-      privateState.luckBuffs.push({ amount: 10, turnsRemaining: 5 });
+      player.inventory.push(ShopItemType.Whiskey);
+      if (!privateState.hasFiveLeafClover) {
+        privateState.luckBuffs.push({ amount: 10, turnsRemaining: 5 });
+      }
       return true;
     }
 
@@ -1160,12 +1167,14 @@ export class GameManager {
       return true;
     }
 
-    // Handle 5 Leaf Clover — lock luck to 77 (one-time)
+    // Handle 5 Leaf Clover — lock luck to 77 (one-time effect); subsequent purchases are cosmetic
     if (itemType === ShopItemType.FiveLeafClover) {
       const cost = getPrice(ShopItemType.FiveLeafClover);
       if (player.stack < cost) return false;
       player.stack -= cost;
-      privateState.hasFiveLeafClover = true;
+      if (!privateState.hasFiveLeafClover) {
+        privateState.hasFiveLeafClover = true;
+      }
       player.inventory.push(ShopItemType.FiveLeafClover);
       return true;
     }
@@ -1478,11 +1487,12 @@ export class GameManager {
     }
 
     const eligible = getEligibleShopItems(privateState, ownedUniqueItems);
+    const playerLuck = getTotalLuck(privateState);
 
-    // Build weighted pool using shared weight map
+    // Build weighted pool using luck-adjusted weights
     let pool: ShopItemType[] = [];
     for (const type of eligible) {
-      const weight = getItemShopWeight(type);
+      const weight = getLuckBoostedWeight(type, playerLuck);
       for (let i = 0; i < weight; i++) pool.push(type);
     }
 
@@ -1766,20 +1776,20 @@ export class GameManager {
     if (Math.random() >= chance) return card; // no improvement
 
     const roll = Math.random();
-    if (roll < 0.5) {
-      // 50%: increase rank by 1 (no change for Aces)
-      if (card.rank >= Rank.Ace) return { ...card, improved: true };
-      return { suit: card.suit, rank: (card.rank + 1) as Rank, improved: true };
-    } else if (roll < 0.6) {
+    if (roll < 0.22) {
+      // 22%: improve to Jack of same suit
       return { suit: card.suit, rank: Rank.Jack, improved: true };
-    } else if (roll < 0.7) {
+    } else if (roll < 0.44) {
+      // 22%: improve to Queen of same suit
       return { suit: card.suit, rank: Rank.Queen, improved: true };
-    } else if (roll < 0.8) {
+    } else if (roll < 0.66) {
+      // 22%: improve to King of same suit
       return { suit: card.suit, rank: Rank.King, improved: true };
-    } else if (roll < 0.9) {
+    } else if (roll < 0.88) {
+      // 22%: improve to Ace of same suit
       return { suit: card.suit, rank: Rank.Ace, improved: true };
     } else {
-      // 10%: exact duplicate of the other card
+      // 12%: exact duplicate of the other card
       return { suit: otherCard.suit, rank: otherCard.rank, improved: true };
     }
   }
