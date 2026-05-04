@@ -15,6 +15,11 @@ export enum ShopItemType {
   XRayGoggles = 40,
   Rake = 41,
   HiddenCamera = 42,
+  LoadedDeck = 43,
+  CardReroll = 44,
+  StickyFingers = 45,
+  CardShark = 46,
+  RabbitsFoot = 47,
   Bond = 50,
   StockOption = 51,
   HeartOfHearts = 60,
@@ -60,6 +65,9 @@ export interface PlayerPrivateState {
   hasSleeveExtender: boolean;
   sleeveCard2: Card | null;
   xrayCharges: number;
+  loadedDeckCharges: number;
+  cardRerollCharges: number;
+  stickyFingersCharges: number;
   permanentLuck: number;
   luckBuffs: LuckBuff[];
   hasRake: boolean;
@@ -76,6 +84,10 @@ export interface PlayerPrivateState {
   hasPairOfPairs: boolean;
   hasImprovedPairOfPairs: boolean;
   hasWonWithOnePair: boolean; // unlock flag for PairOfPairs shop entry
+  hasCardShark: boolean;
+  hasRabbitsFoot: boolean;
+  hasLostAtShowdown: boolean;  // unlock flag for CardShark shop entry
+  hasEverBoughtLuckItem: boolean; // unlock flag for RabbitsFoot shop entry
 }
 
 export enum ShopItemRarity {
@@ -112,6 +124,11 @@ export const ITEM_RARITY_MAP: Record<ShopItemType, ShopItemRarity> = {
   [ShopItemType.XRayGoggles]:         ShopItemRarity.Copper,
   [ShopItemType.Rake]:                ShopItemRarity.Silver,
   [ShopItemType.HiddenCamera]:        ShopItemRarity.Bronze,
+  [ShopItemType.LoadedDeck]:          ShopItemRarity.Bronze,
+  [ShopItemType.CardReroll]:          ShopItemRarity.Bronze,
+  [ShopItemType.StickyFingers]:       ShopItemRarity.Gold,
+  [ShopItemType.CardShark]:           ShopItemRarity.Gold,
+  [ShopItemType.RabbitsFoot]:         ShopItemRarity.Bronze,
   [ShopItemType.Bond]:                ShopItemRarity.Copper,
   [ShopItemType.StockOption]:         ShopItemRarity.Copper,
   [ShopItemType.HeartOfHearts]:       ShopItemRarity.Bronze,
@@ -202,6 +219,11 @@ export const ITEM_IS_ACTIVE: Record<ShopItemType, boolean> = {
   [ShopItemType.XRayGoggles]:      true,
   [ShopItemType.Rake]:             false,
   [ShopItemType.HiddenCamera]:     true,
+  [ShopItemType.LoadedDeck]:       true,
+  [ShopItemType.CardReroll]:       true,
+  [ShopItemType.StickyFingers]:    true,
+  [ShopItemType.CardShark]:        false,
+  [ShopItemType.RabbitsFoot]:      false,
   [ShopItemType.Bond]:                true,
   [ShopItemType.StockOption]:         true,
   [ShopItemType.HeartOfHearts]:       false,
@@ -230,6 +252,11 @@ export const ShopCatalog: Record<ShopItemType, number> = {
   [ShopItemType.XRayGoggles]:      80,
   [ShopItemType.Rake]:             200,
   [ShopItemType.HiddenCamera]:     150,
+  [ShopItemType.LoadedDeck]:       150,
+  [ShopItemType.CardReroll]:       100,
+  [ShopItemType.StickyFingers]:    275,
+  [ShopItemType.CardShark]:        300,
+  [ShopItemType.RabbitsFoot]:       80,
   [ShopItemType.Bond]:                150,
   [ShopItemType.StockOption]:         100,
   [ShopItemType.HeartOfHearts]:       90,
@@ -271,6 +298,11 @@ export function getShopItemInfo(type: ShopItemType): { name: string; description
     [ShopItemType.XRayGoggles]: { name: 'X-Ray Goggles', description: 'Peek at the next community card (+3 charges)' },
     [ShopItemType.Rake]: { name: 'Rake', description: 'Secretly take 5% of every pot' },
     [ShopItemType.HiddenCamera]: { name: 'Hidden Camera', description: 'See one of an opponent\'s hole cards (+3 charges)' },
+    [ShopItemType.LoadedDeck]: { name: 'Loaded Deck', description: 'Send the next community card to the bottom of the deck (+3 charges). Best paired with X-Ray Goggles.' },
+    [ShopItemType.CardReroll]: { name: 'Card Reroll', description: 'Discard your hole cards and draw 2 fresh ones (+2 charges). Pre-flop only, once per hand.' },
+    [ShopItemType.StickyFingers]: { name: 'Sticky Fingers', description: 'Steal a random hole card from an opponent into your sleeve (+1 charge). Requires Big Sleeves. You will be eligible to be shot.' },
+    [ShopItemType.CardShark]: { name: 'Card Shark', description: 'If you lose at showdown by exactly one rank in the same hand category, your hand wins instead. One-time passive.' },
+    [ShopItemType.RabbitsFoot]: { name: "Rabbit's Foot", description: 'When you lose at showdown, luck-scaled chance to refund 33% of your bet contribution. One-time passive.' },
     [ShopItemType.Bond]: { name: 'Bond', description: 'Invest at a random price. Value grows 25%/hand up to $1,000.' },
     [ShopItemType.StockOption]: { name: 'Stock Option', description: 'Invest at a random price. After 3 hands: 1/3 chance for 5x return.' },
     [ShopItemType.HeartOfHearts]:       { name: 'Heart of Hearts',        description: 'All hole cards become hearts on draw (applied after luck).' },
@@ -309,6 +341,16 @@ export function getEligibleShopItems(state: PlayerPrivateState, ownedUniqueItems
   // Charge-based items (can always buy more — each purchase adds charges)
   items.push(ShopItemType.XRayGoggles);
   items.push(ShopItemType.HiddenCamera);
+  // Loaded Deck — requires X-Ray Goggles to be useful; only shown once player has charges
+  if (state.xrayCharges > 0 || state.loadedDeckCharges > 0) items.push(ShopItemType.LoadedDeck);
+  // Card Reroll — always available
+  items.push(ShopItemType.CardReroll);
+  // Sticky Fingers — requires Hidden Camera (for the synergy) and Big Sleeves (to hold stolen card)
+  if ((state.hiddenCameraCharges > 0 || state.stickyFingersCharges > 0) && state.hasCardSleeveUnlock) items.push(ShopItemType.StickyFingers);
+  // Card Shark — unlocked after losing at showdown; one-time purchase
+  if (state.hasLostAtShowdown && !state.hasCardShark) items.push(ShopItemType.CardShark);
+  // Rabbit's Foot — requires having bought at least one luck item; one-time purchase
+  if (state.hasEverBoughtLuckItem && !state.hasRabbitsFoot) items.push(ShopItemType.RabbitsFoot);
 
   // Luck items — always available for purchase.
   // With a 5-leaf clover, cigarettes/whiskey do nothing but are still sold (cosmetic).

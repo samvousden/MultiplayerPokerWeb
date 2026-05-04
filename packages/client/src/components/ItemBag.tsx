@@ -4,6 +4,7 @@ import {
   ShopItemType,
   UseItemType,
   HandPhase,
+  BettingRound,
   getBondCashOutValue,
   cardToDisplayString,
   isJokerCard,
@@ -26,6 +27,9 @@ type ActiveEntry =
   | { id: string; kind: 'xray-reveal' }
   | { id: string; kind: 'camera'; charges: number }
   | { id: string; kind: 'camera-reveal' }
+  | { id: string; kind: 'loadedDeck'; charges: number }
+  | { id: string; kind: 'cardReroll'; charges: number }
+  | { id: string; kind: 'stickyFingers'; charges: number }
   | { id: string; kind: 'sleeve'; slotIndex: 0 | 1; card: Card; usedThisHand: boolean }
   | { id: string; kind: 'bond'; index: number; bond: BondState }
   | { id: string; kind: 'stockOption'; index: number; option: StockOptionState };
@@ -41,7 +45,9 @@ type PassiveEntry =
   | { id: string; kind: 'heartOfHearts' }
   | { id: string; kind: 'spadeOfSpades' }
   | { id: string; kind: 'pairOfPairs' }
-  | { id: string; kind: 'improvedPairOfPairs' };
+  | { id: string; kind: 'improvedPairOfPairs' }
+  | { id: string; kind: 'cardShark' }
+  | { id: string; kind: 'rabbitsFoot' };
 
 // ── Passive item metadata ────────────────────────────────────────────────────
 const PASSIVE_BASE_META: Record<PassiveEntry['kind'], { label: string; icon: string; baseTooltip: string }> = {
@@ -56,6 +62,8 @@ const PASSIVE_BASE_META: Record<PassiveEntry['kind'], { label: string; icon: str
   spadeOfSpades:      { icon: '♠️', label: 'Spade of Spades',   baseTooltip: 'Earn bonus per spade drawn. Grows by $5 each win.' },
   pairOfPairs:        { icon: '🎴', label: 'Pair of Pairs',     baseTooltip: 'Hole cards always form a pair.' },
   improvedPairOfPairs:{ icon: '🎴', label: 'Improved Pair',     baseTooltip: 'Uses the higher-ranked card for your pair.' },
+  cardShark:          { icon: '🦈', label: 'Card Shark',        baseTooltip: 'If you lose by exactly one rank in the same hand category, your hand wins instead.' },
+  rabbitsFoot:        { icon: '🐇', label: "Rabbit's Foot",    baseTooltip: "On losing at showdown, luck-scaled chance to refund 33% of your bet contribution." },
 };
 
 const LUCKY_ENOUGH_TOOLTIP = "Makes you look cool. You're already lucky enough.";
@@ -70,13 +78,14 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
     gameState, playerId,
     hasGun, bullets,
     xrayCharges, peekedCard,
-    hiddenCameraCharges, revealedCards,
+    hiddenCameraCharges, loadedDeckCharges, cardRerollCharges, stickyFingersCharges, revealedCards,
     sleeveCard, sleeveCard2, sleeveUsedThisHand,
     holeCards,
     bonds, stockOptions,
     luckBuffs, totalLuck,
     spadeOfSpadesBonus,
-    useItem, useXRay, useHiddenCamera, shootPlayer, cashOutBond, cashOutStockOption,
+    hasRerolledThisHand,
+    useItem, useXRay, useLoadedDeck, useCardReroll, useHiddenCamera, useStickyFingers, shootPlayer, cashOutBond, cashOutStockOption,
   } = useGame();
 
   // A player with a 5-leaf clover has their luck locked at 77
@@ -105,6 +114,15 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
       e.push({ id: 'camera', kind: 'camera', charges: hiddenCameraCharges });
       e.push({ id: 'camera-reveal', kind: 'camera-reveal' });
     }
+    if (loadedDeckCharges > 0) {
+      e.push({ id: 'loadedDeck', kind: 'loadedDeck', charges: loadedDeckCharges });
+    }
+    if (cardRerollCharges > 0) {
+      e.push({ id: 'cardReroll', kind: 'cardReroll', charges: cardRerollCharges });
+    }
+    if (stickyFingersCharges > 0) {
+      e.push({ id: 'stickyFingers', kind: 'stickyFingers', charges: stickyFingersCharges });
+    }
     if (sleeveCard)
       e.push({ id: 'sleeve-0', kind: 'sleeve', slotIndex: 0, card: sleeveCard, usedThisHand: sleeveUsedThisHand });
     if (sleeveCard2)
@@ -112,7 +130,7 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
     bonds.forEach((bond, i) => e.push({ id: `bond-${i}`, kind: 'bond', index: i, bond }));
     stockOptions.forEach((opt, i) => e.push({ id: `stock-${i}`, kind: 'stockOption', index: i, option: opt }));
     return e;
-  }, [hasGun, bullets, xrayCharges, peekedCard, hiddenCameraCharges, revealedCards.size,
+  }, [hasGun, bullets, xrayCharges, peekedCard, hiddenCameraCharges, loadedDeckCharges, cardRerollCharges, stickyFingersCharges, revealedCards.size,
       sleeveCard, sleeveCard2, sleeveUsedThisHand, bonds, stockOptions]);
 
   // ── Build passive entries ───────────────────────────────────────────────
@@ -154,6 +172,10 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
       e.push({ id: 'pairOfPairs', kind: 'pairOfPairs' });
     if (myInventory.includes(ShopItemType.ImprovedPairOfPairs))
       e.push({ id: 'improvedPairOfPairs', kind: 'improvedPairOfPairs' });
+    if (myInventory.includes(ShopItemType.CardShark))
+      e.push({ id: 'cardShark', kind: 'cardShark' });
+    if (myInventory.includes(ShopItemType.RabbitsFoot))
+      e.push({ id: 'rabbitsFoot', kind: 'rabbitsFoot' });
     return e;
   }, [myInventory, luckBuffs, spadeOfSpadesBonus, hasFiveLeafClover]);
 
@@ -170,6 +192,11 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
 
   const handleCameraUse = (targetId: number) => {
     useHiddenCamera(targetId);
+    setTargetingId(null);
+  };
+
+  const handleStickyFingersUse = (targetId: number) => {
+    useStickyFingers(targetId);
     setTargetingId(null);
   };
 
@@ -281,6 +308,62 @@ export const ItemBag: React.FC<ItemBagProps> = ({ section }) => {
                 <CardDisplay card={card} className="item-bag-card" mode="display" />
               </div>
             ))}
+          </div>
+        );
+      }
+
+      case 'loadedDeck': {
+        return (
+          <div className="item-bag-cell-content" title="Send the next community card to the bottom of the deck. Works best after peeking with X-Ray Goggles.">
+            <span className="item-bag-icon">🃏</span>
+            <span className="item-bag-label">Loaded Deck</span>
+            <span className="item-bag-badge">×{entry.charges}</span>
+            <button
+              className="item-bag-use-btn"
+              onClick={useLoadedDeck}
+              disabled={entry.charges === 0}
+            >
+              Discard
+            </button>
+          </div>
+        );
+      }
+
+      case 'cardReroll': {
+        const canReroll =
+          gameState?.phase === HandPhase.Betting &&
+          gameState?.round === BettingRound.Preflop &&
+          !hasRerolledThisHand;
+        return (
+          <div className="item-bag-cell-content" title="Discard your hole cards and draw 2 fresh ones. Pre-flop only, once per hand.">
+            <span className="item-bag-icon">🔄</span>
+            <span className="item-bag-label">Card Reroll</span>
+            <span className="item-bag-badge">×{entry.charges}</span>
+            <button
+              className="item-bag-use-btn"
+              onClick={useCardReroll}
+              disabled={!canReroll || entry.charges === 0}
+            >
+              {hasRerolledThisHand ? 'Used' : canReroll ? 'Reroll' : 'Pre-flop only'}
+            </button>
+          </div>
+        );
+      }
+
+      case 'stickyFingers': {
+        if (isTargeting) return renderTargetPicker(handleStickyFingersUse);
+        return (
+          <div className="item-bag-cell-content" title="Steal a random hole card from an opponent into your sleeve.">
+            <span className="item-bag-icon">🖐️</span>
+            <span className="item-bag-label">Sticky Fingers</span>
+            <span className="item-bag-badge">×{entry.charges}</span>
+            <button
+              className="item-bag-use-btn"
+              onClick={() => setTargetingId(entry.id)}
+              disabled={entry.charges === 0}
+            >
+              Steal
+            </button>
           </div>
         );
       }

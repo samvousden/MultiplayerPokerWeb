@@ -16,6 +16,9 @@ interface GameContextType {
   winnerIds: number[];
   foldedOut: boolean;
   xrayCharges: number;
+  loadedDeckCharges: number;
+  cardRerollCharges: number;
+  stickyFingersCharges: number;
   hiddenCameraCharges: number;
   revealedCards: Map<number, Card>; // targetPlayerId -> revealed card
   peekedCard: Card | null; // x-ray peeked card
@@ -27,6 +30,7 @@ interface GameContextType {
   totalLuck: number;
   luckBuffs: LuckBuff[];
   spadeOfSpadesBonus: number;
+  hasRerolledThisHand: boolean;
   
   // Actions
   joinTable: (playerName: string) => Promise<number | false>;
@@ -38,7 +42,10 @@ interface GameContextType {
   useItem: (itemType: number, targetPlayerId?: number) => void;
   refreshSleeveCard: () => void;
   useXRay: () => void;
+  useLoadedDeck: () => void;
+  useCardReroll: () => void;
   useHiddenCamera: (targetPlayerId: number) => void;
+  useStickyFingers: (targetPlayerId: number) => void;
   shootPlayer: (targetPlayerId: number) => void;
   cashOutBond: (bondIndex: number) => void;
   cashOutStockOption: (optionIndex: number) => void;
@@ -61,6 +68,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [winnerIds, setWinnerIds] = useState<number[]>([]);
   const [foldedOut, setFoldedOut] = useState(false);
   const [xrayCharges, setXrayCharges] = useState(0);
+  const [loadedDeckCharges, setLoadedDeckCharges] = useState(0);
+  const [cardRerollCharges, setCardRerollCharges] = useState(0);
+  const [stickyFingersCharges, setStickyFingersCharges] = useState(0);
   const [hiddenCameraCharges, setHiddenCameraCharges] = useState(0);
   const [revealedCards, setRevealedCards] = useState<Map<number, Card>>(new Map());
   const [peekedCard, setPeekedCard] = useState<Card | null>(null);
@@ -72,6 +82,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [totalLuck, setTotalLuck] = useState(0);
   const [luckBuffs, setLuckBuffs] = useState<LuckBuff[]>([]);
   const [spadeOfSpadesBonus, setSpadeOfSpadesBonus] = useState(5);
+  const [hasRerolledThisHand, setHasRerolledThisHand] = useState(false);
 
   const serverUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
@@ -108,6 +119,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setPeekedCard(null);
       setShotFiredEvent(null);
       setSleeveUsedThisHand(false);
+      setHasRerolledThisHand(false);
     });
 
     newSocket.on('hole-cards', (cards: Card[]) => {
@@ -190,6 +202,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setWinnerIds([]);
             setFoldedOut(false);
             setXrayCharges(0);
+            setLoadedDeckCharges(0);
+            setCardRerollCharges(0);
+            setStickyFingersCharges(0);
             setHiddenCameraCharges(0);
             setRevealedCards(new Map());
             setPeekedCard(null);
@@ -201,6 +216,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setTotalLuck(0);
             setLuckBuffs([]);
             setSpadeOfSpadesBonus(5);
+            setHasRerolledThisHand(false);
             resolve(pid);
           } else {
             resolve(false);
@@ -276,6 +292,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, [socket, playerId]);
 
+  const useLoadedDeck = useCallback(() => {
+    if (!socket || !playerId) return;
+    socket.emit('use-loaded-deck', playerId, (response: any) => {
+      if (response.success) {
+        // The peeked card is now stale — the top card was moved to the bottom
+        setPeekedCard(null);
+        setLoadedDeckCharges(response.chargesLeft);
+      }
+    });
+  }, [socket, playerId]);
+
+  const useCardReroll = useCallback(() => {
+    if (!socket || !playerId) return;
+    socket.emit('use-card-reroll', playerId, (response: any) => {
+      if (response.success) {
+        setCardRerollCharges(response.chargesLeft);
+        setHasRerolledThisHand(true);
+        // hole-cards event is emitted separately by server and caught by the listener
+      }
+    });
+  }, [socket, playerId]);
+
   const useHiddenCamera = useCallback((targetPlayerId: number) => {
     if (!socket || !playerId) return;
     socket.emit('use-hidden-camera', playerId, targetPlayerId, (response: any) => {
@@ -286,6 +324,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return next;
         });
         setHiddenCameraCharges(response.chargesLeft);
+      }
+    });
+  }, [socket, playerId]);
+
+  const useStickyFingers = useCallback((targetPlayerId: number) => {
+    if (!socket || !playerId) return;
+    socket.emit('use-sticky-fingers', playerId, targetPlayerId, (response: any) => {
+      if (response.success) {
+        setStickyFingersCharges(response.chargesLeft);
       }
     });
   }, [socket, playerId]);
@@ -306,6 +353,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSleeveCard(response.sleeveCard);
         setSleeveCard2(response.sleeveCard2 ?? null);
         if (response.xrayCharges !== undefined) setXrayCharges(response.xrayCharges);
+        if (response.loadedDeckCharges !== undefined) setLoadedDeckCharges(response.loadedDeckCharges);
+        if (response.cardRerollCharges !== undefined) setCardRerollCharges(response.cardRerollCharges);
+        if (response.stickyFingersCharges !== undefined) setStickyFingersCharges(response.stickyFingersCharges);
         if (response.hiddenCameraCharges !== undefined) setHiddenCameraCharges(response.hiddenCameraCharges);
         if (response.hasGun !== undefined) setHasGun(response.hasGun);
         if (response.bullets !== undefined) setBullets(response.bullets);
@@ -345,6 +395,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setWinnerIds([]);
     setFoldedOut(false);
     setXrayCharges(0);
+    setLoadedDeckCharges(0);
+    setCardRerollCharges(0);
+    setStickyFingersCharges(0);
     setHiddenCameraCharges(0);
     setRevealedCards(new Map());
     setPeekedCard(null);
@@ -356,6 +409,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTotalLuck(0);
     setLuckBuffs([]);
     setSpadeOfSpadesBonus(5);
+    setHasRerolledThisHand(false);
   }, []);
 
   // Refresh sleeve card when player joins or on game state updates
@@ -381,6 +435,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         winnerIds,
         foldedOut,
         xrayCharges,
+        loadedDeckCharges,
+        cardRerollCharges,
+        stickyFingersCharges,
         hiddenCameraCharges,
         revealedCards,
         peekedCard,
@@ -392,6 +449,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         totalLuck,
         luckBuffs,
         spadeOfSpadesBonus,
+        hasRerolledThisHand,
         joinTable,
         playVsBots,
         setReady,
@@ -401,7 +459,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         useItem,
         refreshSleeveCard,
         useXRay,
+        useLoadedDeck,
+        useCardReroll,
         useHiddenCamera,
+        useStickyFingers,
         shootPlayer,
         cashOutBond,
         cashOutStockOption,

@@ -53,6 +53,7 @@ export class GameManager {
   private lastRaiserId: number = 0; // Id of last player to voluntarily bet/raise (0 = no raise yet this round)
   private playersActedThisRound: Set<number> = new Set(); // Tracks who has voluntarily acted; cleared for non-all-in on raise
   private sleeveSwappedThisRound: Set<number> = new Set(); // Track sleeve swaps per round
+  private cardRerolledThisHand: Set<number> = new Set();   // Track card rerolls per hand
   private winnerId: number = 0; // Track the current hand winner
   private winnerIds: number[] = []; // Track all tied winners
   private foldedOut: boolean = false; // Track if winner folded out (vs showdown)
@@ -535,6 +536,9 @@ export class GameManager {
       hasSleeveExtender: false,
       sleeveCard2: null,
       xrayCharges: 0,
+      loadedDeckCharges: 0,
+      cardRerollCharges: 0,
+      stickyFingersCharges: 0,
       permanentLuck: 0,
       luckBuffs: [],
       hasRake: false,
@@ -551,6 +555,10 @@ export class GameManager {
       hasPairOfPairs: false,
       hasImprovedPairOfPairs: false,
       hasWonWithOnePair: false,
+      hasCardShark: false,
+      hasRabbitsFoot: false,
+      hasLostAtShowdown: false,
+      hasEverBoughtLuckItem: false,
     });
 
     this.gameState.gameMode = 'multiplayer';
@@ -616,6 +624,9 @@ export class GameManager {
       hasSleeveExtender: false,
       sleeveCard2: null,
       xrayCharges: 0,
+      loadedDeckCharges: 0,
+      cardRerollCharges: 0,
+      stickyFingersCharges: 0,
       permanentLuck: 0,
       luckBuffs: [],
       hasRake: false,
@@ -632,6 +643,10 @@ export class GameManager {
       hasPairOfPairs: false,
       hasImprovedPairOfPairs: false,
       hasWonWithOnePair: false,
+      hasCardShark: false,
+      hasRabbitsFoot: false,
+      hasLostAtShowdown: false,
+      hasEverBoughtLuckItem: false,
     });
 
     // Shuffle profiles and pick 3 (Fisher-Yates)
@@ -671,6 +686,9 @@ export class GameManager {
         hasSleeveExtender: false,
         sleeveCard2: null,
         xrayCharges: 0,
+        loadedDeckCharges: 0,
+        cardRerollCharges: 0,
+        stickyFingersCharges: 0,
         permanentLuck: 0,
         luckBuffs: [],
         hasRake: false,
@@ -687,6 +705,10 @@ export class GameManager {
         hasPairOfPairs: false,
         hasImprovedPairOfPairs: false,
         hasWonWithOnePair: false,
+        hasCardShark: false,
+        hasRabbitsFoot: false,
+        hasLostAtShowdown: false,
+        hasEverBoughtLuckItem: false,
       });
 
       this.botProfiles.set(botId, profile);
@@ -777,6 +799,7 @@ export class GameManager {
     this.holeCards.clear();
     this.playersActedThisRound.clear(); // Reset action tracking for new hand
     this.sleeveSwappedThisRound.clear(); // Reset sleeve swap tracking for new hand
+    this.cardRerolledThisHand.clear();   // Reset card reroll tracking for new hand
     this.botItemRulesFiredThisHand.clear();
     this.foldedOut = false;
     this.winnerId = 0;
@@ -1111,7 +1134,63 @@ export class GameManager {
       return true;
     }
 
-    // Handle Gun
+    // Handle LoadedDeck — adds 3 charges; requires xray charges or existing loaded deck charges
+    if (itemType === ShopItemType.LoadedDeck) {
+      if (privateState.xrayCharges <= 0 && privateState.loadedDeckCharges <= 0) return false;
+      const cost = getPrice(ShopItemType.LoadedDeck);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.loadedDeckCharges += 3;
+      player.inventory.push(ShopItemType.LoadedDeck);
+      return true;
+    }
+
+    // Handle CardReroll — adds 2 charges
+    if (itemType === ShopItemType.CardReroll) {
+      const cost = getPrice(ShopItemType.CardReroll);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.cardRerollCharges += 2;
+      player.inventory.push(ShopItemType.CardReroll);
+      return true;
+    }
+
+    // Handle StickyFingers — adds 1 charge; requires hidden camera and sleeve unlock
+    if (itemType === ShopItemType.StickyFingers) {
+      if (privateState.hiddenCameraCharges <= 0 && privateState.stickyFingersCharges <= 0) return false;
+      if (!privateState.hasCardSleeveUnlock) return false;
+      const cost = getPrice(ShopItemType.StickyFingers);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.stickyFingersCharges += 1;
+      player.inventory.push(ShopItemType.StickyFingers);
+      return true;
+    }
+
+    // Handle CardShark — unique passive; requires having lost at showdown
+    if (itemType === ShopItemType.CardShark) {
+      if (privateState.hasCardShark) return false;
+      if (!privateState.hasLostAtShowdown) return false;
+      const cost = getPrice(ShopItemType.CardShark);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.hasCardShark = true;
+      player.inventory.push(ShopItemType.CardShark);
+      return true;
+    }
+
+    // Handle RabbitsFoot — unique passive; requires having bought a luck item
+    if (itemType === ShopItemType.RabbitsFoot) {
+      if (privateState.hasRabbitsFoot) return false;
+      if (!privateState.hasEverBoughtLuckItem) return false;
+      const cost = getPrice(ShopItemType.RabbitsFoot);
+      if (player.stack < cost) return false;
+      player.stack -= cost;
+      privateState.hasRabbitsFoot = true;
+      player.inventory.push(ShopItemType.RabbitsFoot);
+      return true;
+    }
+
     if (itemType === ShopItemType.Gun) {
       if (privateState.hasGun) return false;
       const cost = getPrice(ShopItemType.Gun);
@@ -1138,6 +1217,7 @@ export class GameManager {
       if (player.stack < cost) return false;
       player.stack -= cost;
       player.inventory.push(ShopItemType.Cigarette);
+      privateState.hasEverBoughtLuckItem = true;
       if (!privateState.hasFiveLeafClover) {
         privateState.luckBuffs.push({ amount: 5, turnsRemaining: 5 });
       }
@@ -1150,6 +1230,7 @@ export class GameManager {
       if (player.stack < cost) return false;
       player.stack -= cost;
       player.inventory.push(ShopItemType.Whiskey);
+      privateState.hasEverBoughtLuckItem = true;
       if (!privateState.hasFiveLeafClover) {
         privateState.luckBuffs.push({ amount: 10, turnsRemaining: 5 });
       }
@@ -1163,6 +1244,7 @@ export class GameManager {
       player.stack -= cost;
       privateState.permanentLuck += 7;
       privateState.hasFourLeafClover = true;
+      privateState.hasEverBoughtLuckItem = true;
       player.inventory.push(ShopItemType.FourLeafClover);
       return true;
     }
@@ -1175,6 +1257,7 @@ export class GameManager {
       if (!privateState.hasFiveLeafClover) {
         privateState.hasFiveLeafClover = true;
       }
+      privateState.hasEverBoughtLuckItem = true;
       player.inventory.push(ShopItemType.FiveLeafClover);
       return true;
     }
@@ -1628,6 +1711,106 @@ export class GameManager {
     return this.deck[this.deck.length - 1];
   }
 
+  /**
+   * Use a Loaded Deck charge to move the next community card to the bottom of the deck.
+   * Returns true if successful. Best paired with X-Ray Goggles (peek then discard).
+   */
+  useLoadedDeck(playerId: number): boolean {
+    const privateState = this.playerPrivateState.get(playerId);
+    if (!privateState || privateState.loadedDeckCharges <= 0) return false;
+    if (this.gameState.phase !== HandPhase.Betting) return false;
+    // No community cards left to affect after River
+    if (this.gameState.round === BettingRound.River) return false;
+    if (this.deck.length === 0) return false;
+
+    // Move the top card (next to be dealt) to the bottom of the deck
+    const topCard = this.deck.pop()!;
+    this.deck.unshift(topCard);
+
+    privateState.loadedDeckCharges--;
+    privateState.cheatedThisHand = true;
+    return true;
+  }
+
+  /**
+   * Rerolls a player's hole cards. Pre-flop only, once per hand.
+   * Luck/PairOfPairs/HeartOfHearts effects are applied to the new cards.
+   */
+  rerollHoleCards(playerId: number): boolean {
+    if (this.gameState.phase !== HandPhase.Betting) return false;
+    if (this.gameState.round !== BettingRound.Preflop) return false;
+    const ps = this.playerPrivateState.get(playerId);
+    if (!ps || ps.cardRerollCharges <= 0) return false;
+    if (this.cardRerolledThisHand.has(playerId)) return false;
+    if (this.deck.length < 2) return false;
+
+    let cardA = this.deck.pop()!;
+    let cardB = this.deck.pop()!;
+
+    const luck = getTotalLuck(ps);
+    if (luck > 0) {
+      cardA = this.applyLuckToHoleCard(cardA, cardB, luck);
+      cardB = this.applyLuckToHoleCard(cardB, cardA, luck);
+    }
+
+    if (ps.hasPairOfPairs) {
+      const allSuits: Suit[] = [Suit.Clubs, Suit.Diamonds, Suit.Hearts, Suit.Spades];
+      if (ps.hasImprovedPairOfPairs) {
+        const highRank = cardA.rank >= cardB.rank ? cardA.rank : cardB.rank;
+        cardA = { rank: highRank, suit: allSuits[Math.floor(Math.random() * 4)] };
+        cardB = { rank: highRank, suit: allSuits[Math.floor(Math.random() * 4)] };
+      } else {
+        cardB = { rank: cardA.rank, suit: allSuits[Math.floor(Math.random() * 4)] };
+      }
+    }
+
+    if (ps.hasHeartOfHearts) {
+      cardA = { ...cardA, suit: Suit.Hearts };
+      cardB = { ...cardB, suit: Suit.Hearts };
+    }
+
+    this.holeCards.set(playerId, [cardA, cardB]);
+    ps.cardRerollCharges--;
+    this.cardRerolledThisHand.add(playerId);
+    return true;
+  }
+
+  /**
+   * Steals a random hole card from the target into the player's sleeve.
+   * Target receives a random deck replacement. Sets cheatedThisHand on the thief.
+   * Requires Big Sleeves (hasCardSleeveUnlock) on the thief.
+   */
+  useStickyFingers(playerId: number, targetPlayerId: number): boolean {
+    if (this.gameState.phase !== HandPhase.Betting) return false;
+    if (this.gameState.round === BettingRound.River) return false;
+    const ps = this.playerPrivateState.get(playerId);
+    if (!ps || ps.stickyFingersCharges <= 0) return false;
+    if (!ps.hasCardSleeveUnlock) return false;
+    if (playerId === targetPlayerId) return false;
+
+    const target = this.gameState.players.find(p => p.id === targetPlayerId);
+    if (!target || !target.isInHand || target.hasFolded) return false;
+
+    const targetCards = this.holeCards.get(targetPlayerId);
+    if (!targetCards || targetCards.length < 2) return false;
+    if (this.deck.length === 0) return false;
+
+    // Steal a random hole card from the target
+    const stealIdx = Math.floor(Math.random() * 2);
+    const stolenCard = targetCards[stealIdx];
+
+    // Replace the stolen card with a fresh deck card
+    const replacement = this.deck.pop()!;
+    targetCards[stealIdx] = replacement;
+
+    // Put the stolen card in the thief's sleeve (slot 1, replacing any existing)
+    ps.sleeveCard = stolenCard;
+
+    ps.stickyFingersCharges--;
+    ps.cheatedThisHand = true;
+    return true;
+  }
+
   useHiddenCamera(playerId: number, targetPlayerId: number): Card | null {
     const privateState = this.playerPrivateState.get(playerId);
     if (!privateState || privateState.hiddenCameraCharges <= 0) return null;
@@ -2039,6 +2222,23 @@ export class GameManager {
     for (const winnerId of this.winnerIds) {
       const ps = this.playerPrivateState.get(winnerId);
       if (ps?.hasSpadeOfSpades) ps.spadeOfSpadesBonus += 5;
+    }
+
+    // Rabbit's Foot: refund 33% of bet contribution for lucky losers.
+    // Also mark hasLostAtShowdown to unlock Card Shark in the shop.
+    const winnerIdSet = new Set(this.winnerIds);
+    for (const player of activePlayers) {
+      if (winnerIdSet.has(player.id)) continue;
+      const ps = this.playerPrivateState.get(player.id);
+      if (!ps) continue;
+      ps.hasLostAtShowdown = true;
+      if (ps.hasRabbitsFoot) {
+        const luck = getTotalLuck(ps);
+        if (luck > 0 && Math.random() < luck / 100) {
+          const refund = Math.floor(player.contributedThisHand * 0.33);
+          if (refund > 0) player.stack += refund;
+        }
+      }
     }
 
     // Eliminate players who are now broke

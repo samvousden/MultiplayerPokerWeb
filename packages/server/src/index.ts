@@ -445,6 +445,9 @@ io.on('connection', (socket) => {
       sleeveCard2,
       hasUnlock,
       xrayCharges: ps?.xrayCharges ?? 0,
+      loadedDeckCharges: ps?.loadedDeckCharges ?? 0,
+      cardRerollCharges: ps?.cardRerollCharges ?? 0,
+      stickyFingersCharges: ps?.stickyFingersCharges ?? 0,
       hiddenCameraCharges: ps?.hiddenCameraCharges ?? 0,
       hasGun: ps?.hasGun ?? false,
       bullets: ps?.bullets ?? 0,
@@ -557,6 +560,52 @@ io.on('connection', (socket) => {
       callback({ success: true, card, chargesLeft: ps?.xrayCharges ?? 0 });
     } else {
       callback({ success: false, error: 'Cannot use X-Ray Goggles now' });
+    }
+  });
+
+  socket.on('use-loaded-deck', (playerId: number, callback) => {
+    const success = gameManager.useLoadedDeck(playerId);
+    if (success) {
+      const ps = gameManager.getPlayerPrivateState(playerId);
+      callback({ success: true, chargesLeft: ps?.loadedDeckCharges ?? 0 });
+    } else {
+      callback({ success: false, error: 'Cannot use Loaded Deck now' });
+    }
+  });
+
+  socket.on('use-card-reroll', (playerId: number, callback) => {
+    const success = gameManager.rerollHoleCards(playerId);
+    if (success) {
+      const ps = gameManager.getPlayerPrivateState(playerId);
+      const newCards = gameManager.getHoleCards(playerId);
+      callback({ success: true, chargesLeft: ps?.cardRerollCharges ?? 0 });
+      if (newCards) {
+        socket.emit('hole-cards', newCards);
+      }
+    } else {
+      callback({ success: false, error: 'Cannot reroll cards now' });
+    }
+  });
+
+  socket.on('use-sticky-fingers', (playerId: number, targetPlayerId: number, callback) => {
+    const success = gameManager.useStickyFingers(playerId, targetPlayerId);
+    if (success) {
+      const ps = gameManager.getPlayerPrivateState(playerId);
+      callback({ success: true, chargesLeft: ps?.stickyFingersCharges ?? 0 });
+      // Update thief's sleeve with the stolen card
+      const { sleeveCard, sleeveCard2 } = gameManager.getPlayerSleeveCards(playerId);
+      socket.emit('sleeve-card-updated', { sleeveCard, sleeveCard2, sleeveUsedThisHand: gameManager.hasUsedSleeveThisHand(playerId) });
+      // Update target's hole cards
+      const targetCards = gameManager.getHoleCards(targetPlayerId);
+      if (targetCards) {
+        const targetSocketId = Array.from(playerSessions.entries())
+          .find(([_, pid]) => pid === targetPlayerId)?.[0];
+        if (targetSocketId) {
+          io.to(targetSocketId).emit('hole-cards', targetCards);
+        }
+      }
+    } else {
+      callback({ success: false, error: 'Cannot use Sticky Fingers now' });
     }
   });
 
