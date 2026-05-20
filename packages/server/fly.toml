@@ -2,7 +2,7 @@ app            = "pokergame-server"  # change to your chosen Fly app name
 primary_region = "ord"               # ord=Chicago, iad=Virginia, lhr=London, sin=Singapore
 
 [build]
-  dockerfile = "../../Dockerfile"
+  dockerfile = "Dockerfile"  # relative to repo root (where flyctl is run from)
 
 [env]
   PORT = "5000"
