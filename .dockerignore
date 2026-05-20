@@ -12,7 +12,15 @@ packages/shared/dist
 .gitignore
 *.md
 screenshots
-packages/client
-packages/server/fly.toml
+fly.toml
 .env*
 *.log
+
+# Client source not needed (only package.json is copied for workspace linking)
+packages/client/src
+packages/client/public
+packages/client/dist
+packages/client/index.html
+packages/client/vite.config.ts
+packages/client/tsconfig*
+packages/client/amplify.yml
