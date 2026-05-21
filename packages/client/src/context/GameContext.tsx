@@ -95,13 +95,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('VITE_SOCKET_URL is not set. Falling back to current origin for Socket.io:', serverUrl);
     }
   }, [isLocalBrowser, serverUrl]);
-
   useEffect(() => {
+    console.log('[Socket] Connecting to:', serverUrl);
     const newSocket = io(serverUrl, {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 5,
+      // Force WebSocket only — avoids polling issues with Fly.io's proxy
+      transports: ['websocket'],
     });
 
     newSocket.on('connect', () => {
