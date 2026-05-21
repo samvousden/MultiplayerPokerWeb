@@ -19,10 +19,9 @@ function normalizeOrigin(origin: string): string {
 }
 
 function isOriginAllowed(origin?: string): boolean {
-  if (!origin) {
-    // Non-browser tools (health checks/curl) often omit Origin.
-    return true;
-  }
+  // During debugging — log all origins so we can see what's hitting the server
+  console.log(`[CORS] Origin received: "${origin ?? 'none'}". Allowed list: ${allowedOrigins.join(', ')}`);
+  if (!origin) return true;
   const normalized = normalizeOrigin(origin);
   const allowed = allowedOrigins.map(normalizeOrigin).some(o => o === normalized);
   if (!allowed) {
@@ -44,12 +43,12 @@ const corsOriginValidator = (
 
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: corsOriginValidator,
+    origin: '*',  // DEBUG: open to all — tighten after confirming connection works
     methods: ['GET', 'POST'],
   },
 });
 
-app.use(cors({ origin: corsOriginValidator }));
+app.use(cors({ origin: '*' }));  // DEBUG: open to all
 app.use(express.json());
 
 const gameManager = new GameManager();

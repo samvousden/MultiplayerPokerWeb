@@ -84,26 +84,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [luckBuffs, setLuckBuffs] = useState<LuckBuff[]>([]);
   const [spadeOfSpadesBonus, setSpadeOfSpadesBonus] = useState(5);
   const [hasRerolledThisHand, setHasRerolledThisHand] = useState(false);
-
   const browserOrigin = typeof window !== 'undefined' ? window.location.origin : '';
   const isLocalBrowser = browserOrigin.includes('localhost') || browserOrigin.includes('127.0.0.1');
   const fallbackSocketUrl = isLocalBrowser ? 'http://localhost:5000' : browserOrigin;
-  const serverUrl = import.meta.env.VITE_SOCKET_URL || fallbackSocketUrl;
+  const serverUrl = (import.meta.env.VITE_SOCKET_URL || fallbackSocketUrl).trim();
 
   useEffect(() => {
     if (!import.meta.env.VITE_SOCKET_URL && !isLocalBrowser) {
       console.warn('VITE_SOCKET_URL is not set. Falling back to current origin for Socket.io:', serverUrl);
     }
-  }, [isLocalBrowser, serverUrl]);
-  useEffect(() => {
+  }, [isLocalBrowser, serverUrl]);  useEffect(() => {
     console.log('[Socket] Connecting to:', serverUrl);
     const newSocket = io(serverUrl, {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 5,
-      // Force WebSocket only — avoids polling issues with Fly.io's proxy
-      transports: ['websocket'],
+      // Allow polling first so Fly.io proxy can complete the upgrade handshake
+      transports: ['polling', 'websocket'],
+    });
+
+    newSocket.on('connect_error', (err) => {
+      console.error('[Socket] Connection error:', err.message, err);
     });
 
     newSocket.on('connect', () => {
